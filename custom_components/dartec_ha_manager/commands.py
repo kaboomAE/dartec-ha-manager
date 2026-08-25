@@ -24,12 +24,16 @@ _ADDON_ACTIONS = {
 
 
 async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str, Any]:
+    from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
+
     action = cmd.get("action")
     try:
         if action in _ADDON_ACTIONS:
             return await _addon_action(hass, cmd.get("addon_slug", ""), _ADDON_ACTIONS[action])
         if action == "call_service":
             return await _call_service(hass, cmd)
+        if action in LOVELACE_HANDLERS:
+            return await LOVELACE_HANDLERS[action](hass, cmd)
         return {"ok": False, "detail": f"unsupported action '{action}'"}
     except Exception as err:  # noqa: BLE001 — always answer the cloud, never raise
         _LOGGER.warning("Command %s failed: %s", action, err)
