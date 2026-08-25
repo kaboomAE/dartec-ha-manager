@@ -4,6 +4,11 @@ HA OS/Supervised: the Supervisor knows its board ("green", "yellow", "rpi4-64",
 "generic-x86-64") and OS/kernel versions. Everything else — and the CPU model
 itself — comes from /proc and /sys, which are host-scoped even inside the HA
 container, so Container/Core installs get real hardware detail too.
+
+THREADING: every function here touches the filesystem and must run in an
+executor, never the event loop. Callers use `async_collect_hardware`, which
+handles that and caches the static half — CPU model and board do not change
+while the process runs, so they are read once rather than every 60 s.
 """
 from __future__ import annotations
 
@@ -11,7 +16,12 @@ import logging
 import os
 import re
 
+from homeassistant.core import HomeAssistant
+
 _LOGGER = logging.getLogger(__name__)
+
+# Populated on first use inside an executor; static for the process lifetime.
+_STATIC_CACHE: dict | None = None
 
 # Supervisor board slug -> friendly product name
 BOARD_NAMES = {
@@ -73,8 +83,8 @@ def _board_model() -> str | None:
     return None
 
 
-def collect_hardware(supervisor: dict | None = None) -> dict:
-    """supervisor: parsed os/host info when available (HA OS/Supervised)."""
+def _collect_static() -> dict:
+    """BLOCKING — reads /proc, /sys and /etc. Executor only."""
     info: dict = {}
     try:
         import platform
@@ -85,6 +95,8 @@ def collect_hardware(supervisor: dict | None = None) -> dict:
         info["architecture"] = platform.machine() or None
         info["board_model"] = _board_model()
         info["kernel"] = platform.release() or None
+        info["os_release_name"] = _os_release_name()
+        info["docker"] = os.path.exists("/.dockerenv")
 
         try:
             import psutil
@@ -94,7 +106,21 @@ def collect_hardware(supervisor: dict | None = None) -> dict:
             info["cpu_mhz"] = round(freq.max or freq.current) if freq else None
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("psutil hardware detail failed: %s", err)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("static hardware collect failed: %s", err)
+    return info
 
+
+async def async_collect_hardware(hass: HomeAssistant, supervisor: dict | None = None) -> dict:
+    """supervisor: parsed os/host info when available (HA OS/Supervised)."""
+    global _STATIC_CACHE
+
+    if _STATIC_CACHE is None:
+        _STATIC_CACHE = await hass.async_add_executor_job(_collect_static)
+    info = dict(_STATIC_CACHE)
+    os_release_name = info.pop("os_release_name", None)
+
+    try:
         if supervisor:
             board = supervisor.get("board")
             info["board"] = board
@@ -109,11 +135,9 @@ def collect_hardware(supervisor: dict | None = None) -> dict:
             # Container/Core: derive a product name from the board/DMI string
             info["product"] = info.get("board_model") or (
                 f"{info.get('architecture') or 'unknown'} host (container install)")
-            info["os_name"] = _os_release_name()
-
-        info["docker"] = os.path.exists("/.dockerenv")
+            info["os_name"] = os_release_name
     except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("hardware collect failed: %s", err)
+        _LOGGER.debug("hardware merge failed: %s", err)
     return info
 
 

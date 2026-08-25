@@ -15,7 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .hardware import collect_hardware
+from .hardware import async_collect_hardware
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,10 +39,12 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # type. (Supervisor core_stats only measures the Core container; wrong for
     # "how loaded is this machine".) Disk prefers the Supervisor's host view
     # (the HAOS data disk) and falls back to psutil.
-    snapshot["host"] = _collect_host_psutil()
+    # Runs in an executor: psutil hits the filesystem and must not block the loop.
+    snapshot["host"] = await hass.async_add_executor_job(_collect_host_psutil)
 
     supervisor = await _collect_supervisor(hass)
-    snapshot["hardware"] = collect_hardware(supervisor.get("platform") if supervisor else None)
+    snapshot["hardware"] = await async_collect_hardware(
+        hass, supervisor.get("platform") if supervisor else None)
     if supervisor:
         snapshot["addons"] = supervisor.get("addons")
         host_disk = supervisor.get("host_disk") or {}
@@ -309,7 +311,10 @@ async def _collect_supervisor(hass: HomeAssistant) -> dict | None:
 
 def _collect_host_psutil() -> dict:
     """Host-wide metrics via psutil (/proc is host-scoped even in containers).
-    Ships with HA Core (psutil-home-assistant), so present on all install types."""
+    Ships with HA Core (psutil-home-assistant), so present on all install types.
+
+    BLOCKING — reads /proc and calls statvfs. Executor only; unlike the static
+    hardware facts these must be re-read every cycle, so they cannot be cached."""
     try:
         import time
 
