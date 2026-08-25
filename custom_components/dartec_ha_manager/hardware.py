@@ -53,23 +53,65 @@ def _read(path: str) -> str | None:
         return None
 
 
+# ARM cores publish numeric implementer/part codes instead of a model string.
+# Verified need: a real Home Assistant Green (Rockchip RK3566) reported no
+# "model name"/"Hardware" line at all, so CPU identification came back empty.
+ARM_IMPLEMENTERS = {
+    "0x41": "ARM", "0x42": "Broadcom", "0x43": "Cavium", "0x4e": "NVIDIA",
+    "0x51": "Qualcomm", "0x53": "Samsung", "0x61": "Apple",
+}
+ARM_PARTS = {
+    "0xc07": "Cortex-A7", "0xc08": "Cortex-A8", "0xc09": "Cortex-A9",
+    "0xc0d": "Cortex-A12", "0xc0e": "Cortex-A17", "0xc0f": "Cortex-A15",
+    "0xd01": "Cortex-A32", "0xd03": "Cortex-A53", "0xd04": "Cortex-A35",
+    "0xd05": "Cortex-A55", "0xd06": "Cortex-A65", "0xd07": "Cortex-A57",
+    "0xd08": "Cortex-A72", "0xd09": "Cortex-A73", "0xd0a": "Cortex-A75",
+    "0xd0b": "Cortex-A76", "0xd0c": "Neoverse-N1", "0xd0d": "Cortex-A77",
+    "0xd41": "Cortex-A78", "0xd42": "Cortex-A78AE", "0xd44": "Cortex-X1",
+    "0xd46": "Cortex-A510", "0xd47": "Cortex-A710", "0xd48": "Cortex-X2",
+    "0xd4d": "Cortex-A715", "0xd4e": "Cortex-X3",
+}
+
+
+def _soc_name() -> str | None:
+    """SoC from the device tree's compatible list, e.g. 'rockchip,rk3566'."""
+    raw = _read("/sys/firmware/devicetree/base/compatible") or \
+        _read("/proc/device-tree/compatible")
+    if not raw:
+        return None
+    # NUL-separated list, most specific first; the SoC is usually the last entry.
+    entries = [part for part in raw.split("\x00") if part.strip()]
+    return entries[-1].strip() if entries else None
+
+
 def _cpu_model() -> tuple[str | None, int | None]:
     """(model name, core count) from /proc/cpuinfo — works on x86 and ARM."""
     text = _read("/proc/cpuinfo")
     if not text:
         return None, None
-    model = None
+    cores = len(re.findall(r"^processor\s*:", text, re.MULTILINE)) or None
+
     for key in ("model name", "Model", "Processor", "cpu model"):
         match = re.search(rf"^{key}\s*:\s*(.+)$", text, re.MULTILINE)
         if match:
-            model = match.group(1).strip()
-            break
-    if model is None:
-        # ARM boards often only expose implementer/part codes; fall back to Hardware
-        match = re.search(r"^Hardware\s*:\s*(.+)$", text, re.MULTILINE)
-        model = match.group(1).strip() if match else None
-    cores = len(re.findall(r"^processor\s*:", text, re.MULTILINE)) or None
-    return model, cores
+            return match.group(1).strip(), cores
+
+    # Some ARM boards expose a board string here instead.
+    match = re.search(r"^Hardware\s*:\s*(.+)$", text, re.MULTILINE)
+    if match:
+        return match.group(1).strip(), cores
+
+    # Neither present (typical on mainline-kernel ARM64): decode the codes.
+    implementer = re.search(r"^CPU implementer\s*:\s*(\S+)$", text, re.MULTILINE)
+    part = re.search(r"^CPU part\s*:\s*(\S+)$", text, re.MULTILINE)
+    if part:
+        vendor = ARM_IMPLEMENTERS.get((implementer.group(1).lower() if implementer else ""), "")
+        core_name = ARM_PARTS.get(part.group(1).lower(), f"part {part.group(1)}")
+        soc = _soc_name()
+        name = " ".join(filter(None, [vendor, core_name]))
+        return (f"{name} ({soc})" if soc else name), cores
+
+    return None, cores
 
 
 def _board_model() -> str | None:
