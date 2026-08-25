@@ -150,18 +150,29 @@ def _collect_registries(hass: HomeAssistant) -> dict:
                 "entity_count": entities_per_device.get(device.id, 0),
             })
 
+        device_area_id = {device.id: device.area_id for device in device_list}
+
         entity_list = list(entities.entities.values())
         out["entity_registry_count"] = len(entity_list)
         for reg in entity_list[:MAX_ENTITIES]:
             state = hass.states.get(reg.entity_id)
+            # HA semantics: an entity belongs to its own area if set, otherwise
+            # to its device's area. Reading only entity.area_id under-reports
+            # badly — on a real 253-device home it missed 1265 entities.
+            area_id = reg.area_id or device_area_id.get(reg.device_id)
             out["entities"].append({
                 "entity_id": reg.entity_id,
                 "name": reg.name or reg.original_name,
                 "domain": reg.domain,
                 "platform": reg.platform,
                 "device_class": reg.device_class or reg.original_device_class,
-                "area": area_names.get(reg.area_id) if reg.area_id else None,
+                "area": area_names.get(area_id) if area_id else None,
                 "device_id": reg.device_id,
+                # "config"/"diagnostic" entities are plumbing, not things a
+                # resident wants on a dashboard — the compiler filters on this.
+                "entity_category": str(reg.entity_category.value)
+                                   if getattr(reg.entity_category, "value", None)
+                                   else (str(reg.entity_category) if reg.entity_category else None),
                 "disabled": reg.disabled_by is not None,
                 "hidden": reg.hidden_by is not None,
                 "state": state.state if state else None,
