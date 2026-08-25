@@ -1,0 +1,31 @@
+# Validation CI for the DarTec HA Manager agent.
+#
+# - hassfest: Home Assistant's own manifest/structure validation, always against
+#   the CURRENT dev release — catches manifest schema drift.
+# - HACS action: validates the repo is HACS-installable.
+# - monthly schedule: HA ships monthly; the collector touches internals
+#   (lovelace/system_log/hacs data), so re-validating on a schedule catches
+#   breakage even when we haven't pushed anything.
+
+name: Validate
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 5 * *"  # monthly, a few days after HA's release day
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration

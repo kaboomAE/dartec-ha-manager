@@ -1,0 +1,48 @@
+"""Config flow: the installer pastes the server URL + pairing token generated
+in the DarTec admin panel, we validate it against the cloud, done."""
+from __future__ import annotations
+
+from typing import Any
+
+import aiohttp
+import voluptuous as vol
+
+from homeassistant import config_entries
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
+
+STEP_USER_SCHEMA = vol.Schema({
+    vol.Required(CONF_SERVER_URL, default="https://manager.dartec.ae"): str,
+    vol.Required(CONF_PAIRING_TOKEN): str,
+})
+
+
+class DarTecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    VERSION = 1
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            server = user_input[CONF_SERVER_URL].rstrip("/")
+            token = user_input[CONF_PAIRING_TOKEN].strip()
+            try:
+                session = async_get_clientsession(self.hass)
+                async with session.post(f"{server}/api/agent/validate",
+                                        json={"token": token}, timeout=15) as resp:
+                    if resp.status == 401:
+                        errors["base"] = "invalid_token"
+                    elif resp.status != 200:
+                        errors["base"] = "cannot_connect"
+                    else:
+                        info = await resp.json()
+                        await self.async_set_unique_id(info["instance_id"])
+                        self._abort_if_unique_id_configured()
+                        return self.async_create_entry(
+                            title=f"DarTec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
+                            data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
+                        )
+            except (aiohttp.ClientError, TimeoutError):
+                errors["base"] = "cannot_connect"
+
+        return self.async_show_form(step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors)
