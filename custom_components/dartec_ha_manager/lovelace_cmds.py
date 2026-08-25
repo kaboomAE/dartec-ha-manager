@@ -15,6 +15,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .ws_bridge import call_own_ws
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -58,53 +60,6 @@ async def lovelace_save(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return {"ok": True, "detail": f"saved dashboard '{cmd.get('url_path') or '(default)'}'"}
 
 
-async def _own_ws_command(hass: HomeAssistant, payload: dict[str, Any]) -> dict:
-    """Run an official websocket command against our own HA instance.
-
-    The live DashboardsCollection is a local variable inside lovelace's setup —
-    unreachable in-process — so creating dashboards through anything else would
-    desync its in-memory state. Instead we mint a 5-minute owner token, call the
-    real `lovelace/dashboards/create` over a loopback websocket (exactly what
-    the frontend does), and revoke the token in a finally block.
-    """
-    import uuid
-    from datetime import timedelta
-
-    from homeassistant.auth.models import TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
-    owner = next((u for u in await hass.auth.async_get_users() if u.is_owner and u.is_active), None)
-    if owner is None:
-        owner = next((u for u in await hass.auth.async_get_users()
-                      if u.is_active and any(g.id == "system-admin" for g in u.groups)), None)
-    if owner is None:
-        return {"success": False, "error": {"message": "no active owner/admin user found"}}
-
-    refresh = await hass.auth.async_create_refresh_token(
-        owner, client_name=f"DarTec provisioning {uuid.uuid4().hex[:8]}",
-        token_type=TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN,
-        access_token_expiration=timedelta(minutes=5))
-    access = hass.auth.async_create_access_token(refresh)
-    try:
-        port = getattr(getattr(hass.config, "api", None), "port", None) or 8123
-        scheme = "wss" if getattr(getattr(hass.config, "api", None), "use_ssl", False) else "ws"
-        session = async_get_clientsession(hass)
-        async with session.ws_connect(f"{scheme}://127.0.0.1:{port}/api/websocket",
-                                      ssl=False, timeout=15) as ws:
-            await ws.receive_json()  # auth_required
-            await ws.send_json({"type": "auth", "access_token": access})
-            reply = await ws.receive_json()
-            if reply.get("type") != "auth_ok":
-                return {"success": False, "error": {"message": "loopback auth failed"}}
-            await ws.send_json({"id": 1, **payload})
-            while True:
-                msg = await ws.receive_json()
-                if msg.get("id") == 1 and msg.get("type") == "result":
-                    return msg
-    finally:
-        hass.auth.async_remove_refresh_token(refresh)
-
-
 async def lovelace_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     url_path = (cmd.get("url_path") or "").strip()
     if "-" not in url_path:
@@ -112,7 +67,10 @@ async def lovelace_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if url_path in (getattr(_lovelace_data(hass), "dashboards", None) or {}):
         return {"ok": False, "detail": f"dashboard '{url_path}' already exists"}
 
-    result_msg = await _own_ws_command(hass, {
+    # The live DashboardsCollection is a local variable inside lovelace's setup
+    # and unreachable in-process; creating through a parallel collection would
+    # desync it. Use HA's own websocket command instead.
+    result_msg = await call_own_ws(hass, {
         "type": "lovelace/dashboards/create",
         "url_path": url_path,
         "title": cmd.get("title") or url_path,
