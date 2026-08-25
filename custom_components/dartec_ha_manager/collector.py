@@ -15,6 +15,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .hardware import collect_hardware
+
 _LOGGER = logging.getLogger(__name__)
 
 SUPERVISOR_URL = "http://supervisor"
@@ -30,6 +32,7 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["logs"] = _collect_logs(hass)
     snapshot["hacs"] = _collect_hacs(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
+    snapshot.update(_collect_registries(hass))
 
     # Host metrics: psutil reads /proc, which is host-wide even inside the HA
     # container — so CPU/memory/uptime are true SYSTEM usage on every install
@@ -39,6 +42,7 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["host"] = _collect_host_psutil()
 
     supervisor = await _collect_supervisor(hass)
+    snapshot["hardware"] = collect_hardware(supervisor.get("platform") if supervisor else None)
     if supervisor:
         snapshot["addons"] = supervisor.get("addons")
         host_disk = supervisor.get("host_disk") or {}
@@ -95,6 +99,74 @@ def _collect_integrations(hass: HomeAssistant) -> list[dict]:
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("integrations collect failed: %s", err)
     return entries
+
+
+MAX_DEVICES = 600
+MAX_ENTITIES = 2500
+
+
+def _collect_registries(hass: HomeAssistant) -> dict:
+    """Devices, entities and areas from the registries — powers the Devices and
+    Entities tabs and (later) per-home dashboard generation. Capped so a very
+    large home cannot produce an unbounded snapshot."""
+    out: dict[str, Any] = {"devices": [], "entities": [], "areas": []}
+    try:
+        from homeassistant.helpers import area_registry as ar
+        from homeassistant.helpers import device_registry as dr
+        from homeassistant.helpers import entity_registry as er
+
+        areas = ar.async_get(hass)
+        area_names = {area.id: area.name for area in areas.async_list_areas()}
+        out["areas"] = [{"id": area.id, "name": area.name,
+                         "floor_id": getattr(area, "floor_id", None)}
+                        for area in areas.async_list_areas()]
+
+        devices = dr.async_get(hass)
+        entities = er.async_get(hass)
+
+        entities_per_device: dict[str, int] = {}
+        for reg in entities.entities.values():
+            if reg.device_id:
+                entities_per_device[reg.device_id] = entities_per_device.get(reg.device_id, 0) + 1
+
+        device_list = list(devices.devices.values())
+        out["device_count"] = len(device_list)
+        for device in device_list[:MAX_DEVICES]:
+            out["devices"].append({
+                "id": device.id,
+                "name": device.name_by_user or device.name,
+                "manufacturer": device.manufacturer,
+                "model": device.model,
+                "sw_version": device.sw_version,
+                "hw_version": device.hw_version,
+                "area": area_names.get(device.area_id) if device.area_id else None,
+                "via_device": bool(device.via_device_id),
+                "disabled": device.disabled_by is not None,
+                "entry_type": str(device.entry_type) if device.entry_type else None,
+                "connections": sorted({conn_type for conn_type, _ in (device.connections or set())}),
+                "integrations": sorted(device.identifiers and {ident[0] for ident in device.identifiers} or set()),
+                "entity_count": entities_per_device.get(device.id, 0),
+            })
+
+        entity_list = list(entities.entities.values())
+        out["entity_registry_count"] = len(entity_list)
+        for reg in entity_list[:MAX_ENTITIES]:
+            state = hass.states.get(reg.entity_id)
+            out["entities"].append({
+                "entity_id": reg.entity_id,
+                "name": reg.name or reg.original_name,
+                "domain": reg.domain,
+                "platform": reg.platform,
+                "device_class": reg.device_class or reg.original_device_class,
+                "area": area_names.get(reg.area_id) if reg.area_id else None,
+                "device_id": reg.device_id,
+                "disabled": reg.disabled_by is not None,
+                "hidden": reg.hidden_by is not None,
+                "state": state.state if state else None,
+            })
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("registry collect failed: %s", err)
+    return out
 
 
 def _collect_automations(hass: HomeAssistant) -> dict:
@@ -200,6 +272,8 @@ async def _collect_supervisor(hass: HomeAssistant) -> dict | None:
         addons_raw = await get("/addons")
         host_info = await get("/host/info")
         core_info = await get("/core/info")
+        os_info = await get("/os/info")
+        supervisor_info = await get("/supervisor/info")
 
         addons = [{
             "slug": addon.get("slug"),
@@ -216,6 +290,14 @@ async def _collect_supervisor(hass: HomeAssistant) -> dict | None:
             "host_disk": {
                 "disk_used_gb": host_info.get("disk_used"),
                 "disk_total_gb": host_info.get("disk_total"),
+            },
+            "platform": {
+                "board": os_info.get("board"),
+                "os_version": os_info.get("version"),
+                "operating_system": host_info.get("operating_system"),
+                "kernel": host_info.get("kernel"),
+                "disk_life_time": host_info.get("disk_life_time"),
+                "supervisor_version": supervisor_info.get("version"),
             },
             "core_update_available": core_info.get("update_available"),
             "core_latest_version": core_info.get("version_latest"),
