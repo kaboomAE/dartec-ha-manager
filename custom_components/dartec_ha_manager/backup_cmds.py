@@ -31,6 +31,12 @@ UPLOAD_CHUNK = 1024 * 1024        # 1 MiB
 DEFAULT_MAX_UPLOAD_MB = 2048
 
 
+def _has_supervisor() -> bool:
+    import os
+
+    return bool(os.environ.get("SUPERVISOR_TOKEN"))
+
+
 def _fail(msg: str) -> dict:
     return {"ok": False, "detail": msg}
 
@@ -103,9 +109,13 @@ async def backup_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         "agent_ids": agent_ids,
         "include_database": bool(cmd.get("include_database", True)),
         "include_homeassistant": True,
-        "include_all_addons": bool(cmd.get("include_all_addons", True)),
-        "include_folders": cmd.get("include_folders") or ["share", "ssl", "media"],
     }
+    # Add-ons and folders exist only under the Supervisor. Core backup rejects
+    # the whole request if they are present ("Addons and folders are not
+    # supported by core backup"), so a Container install must not send them.
+    if _has_supervisor():
+        payload["include_all_addons"] = bool(cmd.get("include_all_addons", True))
+        payload["include_folders"] = cmd.get("include_folders") or ["share", "ssl", "media"]
     if cmd.get("name"):
         payload["name"] = str(cmd["name"])[:100]
     if cmd.get("password"):
@@ -154,7 +164,8 @@ async def backup_schedule(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         "schedule": schedule,
         "create_backup": {"agent_ids": agent_ids,
                           "include_database": bool(cmd.get("include_database", True)),
-                          "include_all_addons": True},
+                          # Supervisor-only, same as in backup_create above.
+                          **({"include_all_addons": True} if _has_supervisor() else {})},
         "retention": {"copies": cmd.get("keep_copies", 3), "days": cmd.get("keep_days")},
     }
     result = await call_own_ws(hass, payload)
