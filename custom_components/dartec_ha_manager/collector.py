@@ -120,8 +120,23 @@ def _collect_registries(hass: HomeAssistant) -> dict:
         areas = ar.async_get(hass)
         area_names = {area.id: area.name for area in areas.async_list_areas()}
         out["areas"] = [{"id": area.id, "name": area.name,
-                         "floor_id": getattr(area, "floor_id", None)}
+                         "floor_id": getattr(area, "floor_id", None),
+                         "icon": getattr(area, "icon", None),
+                         # HA's own per-area climate readout (2025.2+); the
+                         # manager's Rooms tab lets an installer set these.
+                         "temperature_entity_id": getattr(area, "temperature_entity_id", None),
+                         "humidity_entity_id": getattr(area, "humidity_entity_id", None)}
                         for area in areas.async_list_areas()]
+
+        try:
+            from homeassistant.helpers import floor_registry as fr
+
+            out["floors"] = [{"id": floor.floor_id, "name": floor.name,
+                              "level": floor.level, "icon": floor.icon}
+                             for floor in fr.async_get(hass).async_list_floors()]
+        except Exception as err:  # noqa: BLE001 — floors are newer than our floor
+            _LOGGER.debug("floor registry collect failed: %s", err)
+            out["floors"] = []
 
         devices = dr.async_get(hass)
         entities = er.async_get(hass)
