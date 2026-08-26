@@ -121,29 +121,50 @@ _JS_TEMPLATE = r"""
         || null;
   }
 
+  // Resolve any CSS colour (hex, rgb(), hsl(), named) to perceived luminance by
+  // letting the browser normalise it — HA themes state colours as hex, and
+  // regex-parsing "#17181a" for digits yields nonsense.
+  function luminance(value) {
+    if (!value) return null;
+    const probe = document.createElement("span");
+    probe.style.cssText = "display:none;color:" + value;
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const m = resolved && resolved.match(/[\d.]+/g);
+    if (!m || m.length < 3) return null;
+    return 0.299 * +m[0] + 0.587 * +m[1] + 0.114 * +m[2];
+  }
+
   function isDark() {
     try {
-      const bg = getComputedStyle(document.documentElement)
-        .getPropertyValue("--primary-background-color").trim();
-      if (!bg) return window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const m = bg.match(/\d+/g);
-      if (!m) return window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const [r, g, b] = m.map(Number);
-      return (0.299 * r + 0.587 * g + 0.114 * b) < 128;   // perceived luminance
-    } catch (e) { return false; }
+      const cs = getComputedStyle(document.documentElement);
+      const lum = luminance(cs.getPropertyValue("--primary-background-color").trim())
+               ?? luminance(cs.getPropertyValue("--card-background-color").trim());
+      if (lum === null || lum === undefined) {
+        return window.matchMedia("(prefers-color-scheme: dark)").matches;
+      }
+      return lum < 128;
+    } catch (e) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
   }
 
   function apply() {
     const sidebar = findSidebar();
     const node = titleNode(sidebar);
     if (!node) return false;
-    if (node.dataset && node.dataset.dartecStamp === CFG.stamp) return true;
+    // The marker carries the theme too, so switching light/dark re-renders
+    // with the matching logo instead of short-circuiting as "already done".
+    const dark = isDark();
+    const marker = CFG.stamp + (dark ? "-d" : "-l");
+    if (node.dataset && node.dataset.dartecStamp === marker) return true;
 
     try {
       node.textContent = "";
       if (CFG.logoBase) {
         const img = document.createElement("img");
-        img.src = CFG.logoBase + (isDark() ? "-dark.svg" : "-light.svg");
+        img.src = CFG.logoBase + (dark ? "-dark.svg" : "-light.svg");
         img.alt = CFG.title;
         img.style.cssText = "height:22px;width:auto;display:block;max-width:100%";
         img.onerror = () => { img.remove(); node.textContent = CFG.title; };
@@ -153,7 +174,7 @@ _JS_TEMPLATE = r"""
       }
       node.style.display = "flex";
       node.style.alignItems = "center";
-      if (node.dataset) node.dataset.dartecStamp = CFG.stamp;
+      if (node.dataset) node.dataset.dartecStamp = marker;
     } catch (e) {
       return false;   // never let branding break the sidebar
     }
@@ -209,8 +230,10 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
         _LOGGER.debug("branding static path registration: %s", err)
 
     hass.http.register_view(BrandingScriptView(hass))
-    # Version the URL so a settings change is picked up without a hard refresh.
-    add_extra_js_url(hass, f"{JS_PATH}?v={stamp(_config(hass))}")
+    # No version query: extra module URLs are registered once per HA run, so a
+    # stamp here would go stale the moment branding changed. Freshness comes
+    # from the view's Cache-Control: no-cache instead — the payload is ~4 KB.
+    add_extra_js_url(hass, JS_PATH)
     hass.data[f"{__name__}.registered"] = True
 
 
