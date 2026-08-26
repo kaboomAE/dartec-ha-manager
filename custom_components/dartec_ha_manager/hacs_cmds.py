@@ -66,11 +66,24 @@ async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             return {"ok": False, "detail": f"{repo} added but did not appear in HACS in time"}
 
     installed = entry.get("installed_version")
-    available = entry.get("available_version")
     if cmd.get("only_if_missing") and installed:
         return {"ok": True, "detail": f"{repo} already installed ({installed})",
                 "installed_version": installed}
-    if installed and installed == available:
+
+    # Ask HACS to re-read the repository from GitHub before deciding there is
+    # nothing to do. available_version otherwise comes from HACS's cached
+    # index, which lags behind a release by up to its polling interval — so a
+    # forced update would report "already up to date" and change nothing.
+    refreshed = await call_own_ws(hass, {"type": "hacs/repository/refresh",
+                                         "repository": entry.get("id")}, timeout=120)
+    if refreshed.get("success"):
+        entry = await _repo_entry(hass, repo) or entry
+        installed = entry.get("installed_version")
+    else:
+        _LOGGER.debug("HACS refresh for %s failed; using cached index", repo)
+
+    available = entry.get("available_version")
+    if installed and available and installed == available:
         return {"ok": True, "detail": f"{repo} already up to date ({installed})",
                 "installed_version": installed}
 
