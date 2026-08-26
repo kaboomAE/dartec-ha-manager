@@ -30,6 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 
 URL_BASE = "/dartec_branding"
 JS_PATH = f"{URL_BASE}/branding.js"
+CONFIG_PATH = f"{URL_BASE}/config.json"
 
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
@@ -74,16 +75,46 @@ class BrandingScriptView(HomeAssistantView):
                             headers={"Cache-Control": "no-cache"})
 
 
-def _render_js(config: dict[str, Any]) -> str:
+class BrandingConfigView(HomeAssistantView):
+    """The current settings as JSON, so a page that is already open can notice
+    that branding was turned off.
+
+    Without this, removing branding only takes effect the next time the
+    customer reloads: the module is fetched once per page load, so a tab left
+    open keeps running the copy that was current when it opened, and no
+    later change can reach it. Unauthenticated for the same reason as the
+    script itself — it carries a company name and a logo choice.
+    """
+
+    url = CONFIG_PATH
+    name = "dartec:branding:config"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+
+    async def get(self, request):
+        from aiohttp import web
+
+        return web.json_response(_payload(_config(self._hass)),
+                                 headers={"Cache-Control": "no-store"})
+
+
+def _payload(config: dict[str, Any]) -> dict[str, Any]:
     logo_file = {"mark": "dartec-mark", "lockup": "dartec-lockup"}.get(config.get("logo") or "")
-    payload = {
+    return {
         "enabled": bool(config.get("enabled")),
         "title": str(config.get("title") or "").strip(),
         "tabSuffix": bool(config.get("tab_suffix")),
         "logoBase": f"{URL_BASE}/{logo_file}" if logo_file else "",
         "stamp": stamp(config),
     }
-    return _JS_TEMPLATE.replace("__DARTEC_CONFIG__", json.dumps(payload))
+
+
+def _render_js(config: dict[str, Any]) -> str:
+    return (_JS_TEMPLATE
+            .replace("__DARTEC_CONFIG__", json.dumps(_payload(config)))
+            .replace("__DARTEC_CONFIG_URL__", CONFIG_PATH))
 
 
 # The module runs on every page load of the customer's HA frontend.
@@ -92,11 +123,15 @@ _JS_TEMPLATE = r"""
 // Injected via frontend.add_extra_js_url by the dartec_ha_manager integration.
 (() => {
   "use strict";
-  const CFG = __DARTEC_CONFIG__;
-  if (!CFG.enabled || !CFG.title) return;
+  // Mutable: the settings can change while this page stays open, and the
+  // script re-reads them so that turning branding off actually removes it
+  // instead of waiting for the customer to reload.
+  let CFG = __DARTEC_CONFIG__;
+  const CONFIG_URL = "__DARTEC_CONFIG_URL__";
 
   const MAX_TRIES = 60;          // ~30 s of retries, then give up quietly
   let tries = 0;
+  let appliedSuffix = "";        // the tab-title suffix we are responsible for
 
   const shadow = (el, sel) => (el && el.shadowRoot ? el.shadowRoot.querySelector(sel) : null);
 
@@ -161,6 +196,10 @@ _JS_TEMPLATE = r"""
     if (node.dataset && node.dataset.dartecStamp === marker) return true;
 
     try {
+      // Remember what was there so branding can be taken off again cleanly.
+      if (node.dataset && node.dataset.dartecOriginal === undefined) {
+        node.dataset.dartecOriginal = node.textContent.trim();
+      }
       node.textContent = "";
       if (CFG.logoBase) {
         const img = document.createElement("img");
@@ -181,28 +220,74 @@ _JS_TEMPLATE = r"""
     return true;
   }
 
+  // Put the sidebar back exactly as it was found. Only touches a node this
+  // script branded — anything without our marker is left alone.
+  function revert() {
+    const node = titleNode(findSidebar());
+    if (!node || !node.dataset || node.dataset.dartecStamp === undefined) return true;
+    try {
+      node.textContent = node.dataset.dartecOriginal || "Home Assistant";
+      node.style.removeProperty("display");
+      node.style.removeProperty("align-items");
+      delete node.dataset.dartecStamp;
+      delete node.dataset.dartecOriginal;
+    } catch (e) { /* leave the sidebar alone rather than half-break it */ }
+    return true;
+  }
+
   function applyTabTitle() {
-    if (!CFG.tabSuffix) return;
+    if (!CFG.tabSuffix || !CFG.title) return;
     const suffix = " — " + CFG.title;
+    appliedSuffix = suffix;
     if (document.title && !document.title.endsWith(suffix)) {
       document.title = document.title.replace(/ — Home Assistant$/, "") + suffix;
     }
   }
 
+  function revertTabTitle() {
+    if (!appliedSuffix) return;
+    if (document.title && document.title.endsWith(appliedSuffix)) {
+      document.title = document.title.slice(0, -appliedSuffix.length) || "Home Assistant";
+    }
+    appliedSuffix = "";
+  }
+
+  function branded() { return CFG.enabled && CFG.title; }
+
   function tick() {
+    if (!branded()) { revertTabTitle(); revert(); return; }
     applyTabTitle();
     const done = apply();
     tries += 1;
     if (!done && tries < MAX_TRIES) setTimeout(tick, 500);
   }
 
+  // Re-read the settings. Called on the same events that re-assert branding,
+  // so a change reaches an open tab on the customer's next navigation or when
+  // they come back to it — no manual refresh, and no polling timer.
+  function refreshConfig() {
+    try {
+      fetch(CONFIG_URL, { cache: "no-store", credentials: "same-origin" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((next) => {
+          if (!next || next.stamp === CFG.stamp) return;
+          const wasBranded = branded();
+          CFG = next;
+          tries = 0;
+          if (wasBranded && !branded()) { revertTabTitle(); revert(); }
+          else tick();
+        })
+        .catch(() => {});
+    } catch (e) { /* HA restarting; keep what we have */ }
+  }
+
   // HA is a SPA and re-renders the sidebar on navigation and theme changes, so
   // re-assert rather than assuming one pass sticks.
-  const reassert = () => { tries = 0; tick(); };
+  const reassert = () => { tries = 0; tick(); refreshConfig(); };
   window.addEventListener("location-changed", reassert);
   window.addEventListener("settheme", reassert);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) reassert(); });
-  new MutationObserver(applyTabTitle)
+  new MutationObserver(() => { if (branded()) applyTabTitle(); })
     .observe(document.querySelector("title") || document.head, { childList: true, subtree: true });
 
   if (document.readyState === "loading") {
@@ -230,6 +315,7 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
         _LOGGER.debug("branding static path registration: %s", err)
 
     hass.http.register_view(BrandingScriptView(hass))
+    hass.http.register_view(BrandingConfigView(hass))
     # No version query: extra module URLs are registered once per HA run, so a
     # stamp here would go stale the moment branding changed. Freshness comes
     # from the view's Cache-Control: no-cache instead — the payload is ~4 KB.
