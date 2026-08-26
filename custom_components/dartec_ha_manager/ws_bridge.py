@@ -23,6 +23,16 @@ _LOGGER = logging.getLogger(__name__)
 TOKEN_TTL_MINUTES = 5
 
 
+async def mint_owner_token(hass: HomeAssistant):
+    """Public alias — other modules (backup upload) need a short-lived token
+    for HA's own HTTP API and must remove the refresh token afterwards."""
+    return await _mint_owner_token(hass)
+
+
+def base_url(hass: HomeAssistant, ws: bool = False) -> str:
+    return _base_url(hass, ws)
+
+
 async def _mint_owner_token(hass: HomeAssistant):
     """(refresh_token, access_token) for a short-lived owner credential, or
     (None, error_message) when no owner/admin exists."""

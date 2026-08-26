@@ -31,6 +31,7 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["dashboards"] = _collect_dashboards(hass)
     snapshot["logs"] = _collect_logs(hass)
     snapshot["hacs"] = _collect_hacs(hass)
+    snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
     snapshot.update(_collect_registries(hass))
 
@@ -210,6 +211,35 @@ def _collect_registries(hass: HomeAssistant) -> dict:
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("registry collect failed: %s", err)
     return out
+
+
+async def _collect_backup(hass: HomeAssistant) -> dict:
+    """Enough backup state for the fleet to answer 'is this home protected?'
+    without asking the home a second question."""
+    try:
+        from .ws_bridge import call_own_ws
+
+        info = await call_own_ws(hass, {"type": "backup/info"}, timeout=30)
+        if not info.get("success"):
+            return {}
+        backups = (info.get("result") or {}).get("backups") or []
+        latest = max(backups, key=lambda b: b.get("date") or "", default=None)
+
+        config = await call_own_ws(hass, {"type": "backup/config/info"}, timeout=30)
+        cfg = (config.get("result") or {}).get("config") or {}
+        schedule = cfg.get("schedule") or {}
+        return {
+            "count": len(backups),
+            "last_date": (latest or {}).get("date"),
+            "last_name": (latest or {}).get("name"),
+            "last_size": (latest or {}).get("size"),
+            "automatic_configured": bool(cfg.get("automatic_backups_configured")),
+            "recurrence": schedule.get("recurrence"),
+            "next_automatic": schedule.get("next_automatic_backup"),
+        }
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("backup collect failed: %s", err)
+        return {}
 
 
 def _collect_automations(hass: HomeAssistant) -> dict:
