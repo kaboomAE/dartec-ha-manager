@@ -73,4 +73,11 @@ async def automation_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             "detail": f"created automation '{config.get('alias')}' ({automation_id})"}
 
 
-HANDLERS = {"theme_set": theme_set, "automation_create": automation_create}
+async def branding_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    from .branding import branding_set as _apply
+
+    return await _apply(hass, cmd)
+
+
+HANDLERS = {"theme_set": theme_set, "automation_create": automation_create,
+            "branding_set": branding_set}

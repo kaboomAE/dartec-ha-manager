@@ -5,11 +5,16 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Branding is restored from the entry's options, so a home keeps its
+    # installer branding across restarts even if the manager is unreachable.
+    await async_setup_branding(hass, entry.options.get("branding"))
+
     link = CloudLink(hass, entry.data[CONF_SERVER_URL], entry.data[CONF_PAIRING_TOKEN])
     link.start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
