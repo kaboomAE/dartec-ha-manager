@@ -18,6 +18,7 @@ Raspberry Pi with 2 GB of RAM.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -191,9 +192,12 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if not details.get("success"):
         return _fail(_error_text(details, "backup details"))
     backup = (details.get("result") or {}).get("backup") or {}
-    size_mb = round((backup.get("size") or 0) / 1024 / 1024, 1)
-    if size_mb > max_mb:
-        return _fail(f"backup is {size_mb} MB, over the {max_mb} MB limit for offsite copies")
+    # Core backups report no size in backup/details (only Supervisor ones do),
+    # so this pre-check is best-effort. The manager enforces a hard byte
+    # ceiling on the receiving end, which is what actually bounds this.
+    declared_mb = round((backup.get("size") or 0) / 1024 / 1024, 1)
+    if declared_mb and declared_mb > max_mb:
+        return _fail(f"backup is {declared_mb} MB, over the {max_mb} MB limit for offsite copies")
 
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     from .ws_bridge import base_url
@@ -228,14 +232,20 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
                 body = await dst.text()
                 if dst.status >= 300:
                     return _fail(f"upload rejected by the manager (HTTP {dst.status}): {body[:200]}")
+                # Report what was actually transferred, not what HA declared:
+                # core backups declare nothing and would report "0.0 MB".
+                try:
+                    stored_mb = round(json.loads(body).get("stored_bytes", 0) / 1024 / 1024, 1)
+                except Exception:  # noqa: BLE001
+                    stored_mb = declared_mb
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("backup upload failed: %s", err)
         return _fail(f"upload failed: {err}")
     finally:
         hass.auth.async_remove_refresh_token(refresh)
 
-    return {"ok": True, "size_mb": size_mb,
-            "detail": f"copied '{backup.get('name')}' ({size_mb} MB) offsite"}
+    return {"ok": True, "size_mb": stored_mb,
+            "detail": f"copied '{backup.get('name')}' ({stored_mb} MB) offsite"}
 
 
 HANDLERS = {
