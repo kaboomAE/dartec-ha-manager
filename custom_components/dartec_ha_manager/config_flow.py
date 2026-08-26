@@ -1,5 +1,5 @@
 """Config flow: the installer pastes the server URL + pairing token generated
-in the DarTec admin panel, we validate it against the cloud, done."""
+in the Dartec admin panel, we validate it against the cloud, done."""
 from __future__ import annotations
 
 from typing import Any
@@ -18,7 +18,7 @@ STEP_USER_SCHEMA = vol.Schema({
 })
 
 
-class DarTecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
@@ -39,7 +39,7 @@ class DarTecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         await self.async_set_unique_id(info["instance_id"])
                         self._abort_if_unique_id_configured()
                         return self.async_create_entry(
-                            title=f"DarTec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
+                            title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
                             data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
                         )
             except (aiohttp.ClientError, TimeoutError):

@@ -1,5 +1,5 @@
 """Cloud link — the persistent outbound WebSocket from this Home Assistant
-instance to the DarTec HA Manager cloud.
+instance to the Dartec HA Manager cloud.
 
 The home never opens inbound ports: the agent dials out, authenticates with
 its pairing token, and pushes a snapshot every 60 seconds. Reconnects with
@@ -52,13 +52,13 @@ class CloudLink:
                     await ws.send_json({"type": "auth", "token": self._token})
                     reply = await ws.receive_json()
                     if reply.get("type") != "auth_ok":
-                        _LOGGER.error("DarTec cloud rejected pairing token: %s", reply.get("reason"))
+                        _LOGGER.error("Dartec cloud rejected pairing token: %s", reply.get("reason"))
                         return  # bad token will not fix itself — stop, user must re-pair
-                    _LOGGER.info("Connected to DarTec HA Manager cloud")
+                    _LOGGER.info("Connected to Dartec HA Manager cloud")
                     backoff = RECONNECT_MIN_S
                     await self._snapshot_loop(ws)
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
-                _LOGGER.warning("DarTec cloud link lost (%s); retrying in %ss", err, backoff)
+                _LOGGER.warning("Dartec cloud link lost (%s); retrying in %ss", err, backoff)
             except asyncio.CancelledError:
                 raise
             await asyncio.sleep(backoff)

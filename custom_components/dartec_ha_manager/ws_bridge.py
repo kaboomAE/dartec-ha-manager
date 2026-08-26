@@ -37,7 +37,7 @@ async def _mint_owner_token(hass: HomeAssistant):
         return None, "no active owner/admin user found"
 
     refresh = await hass.auth.async_create_refresh_token(
-        owner, client_name=f"DarTec task {uuid.uuid4().hex[:8]}",
+        owner, client_name=f"Dartec task {uuid.uuid4().hex[:8]}",
         token_type=TOKEN_TYPE_LONG_LIVED_ACCESS_TOKEN,
         access_token_expiration=timedelta(minutes=TOKEN_TTL_MINUTES))
     return refresh, hass.auth.async_create_access_token(refresh)

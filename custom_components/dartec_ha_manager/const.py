@@ -1,4 +1,4 @@
-"""Constants for the DarTec HA Manager agent."""
+"""Constants for the Dartec HA Manager agent."""
 
 DOMAIN = "dartec_ha_manager"
 

@@ -2,20 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to DarTec HA Manager",
-        "description": "Paste the pairing token generated in the DarTec admin panel for this home.",
+        "title": "Connect to Dartec HA Manager",
+        "description": "Paste the pairing token generated in the Dartec admin panel for this home.",
         "data": {
-          "server_url": "DarTec server URL",
+          "server_url": "Dartec server URL",
           "pairing_token": "Pairing token"
         }
       }
     },
     "error": {
-      "invalid_token": "Unknown pairing token — generate a new one in the DarTec admin panel.",
-      "cannot_connect": "Could not reach the DarTec server. Check the URL and internet connection."
+      "invalid_token": "Unknown pairing token — generate a new one in the Dartec admin panel.",
+      "cannot_connect": "Could not reach the Dartec server. Check the URL and internet connection."
     },
     "abort": {
-      "already_configured": "This instance is already paired with DarTec HA Manager."
+      "already_configured": "This instance is already paired with Dartec HA Manager."
     }
   }
 }

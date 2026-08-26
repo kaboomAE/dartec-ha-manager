@@ -1,12 +1,14 @@
 {
   "domain": "dartec_ha_manager",
-  "name": "DarTec HA Manager",
-  "codeowners": ["@kaboomAE"],
+  "name": "Dartec HA Manager",
+  "codeowners": [
+    "@kaboomAE"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/kaboomAE/dartec-ha-manager",
   "integration_type": "service",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/kaboomAE/dartec-ha-manager/issues",
   "requirements": [],
-  "version": "0.6.0"
+  "version": "0.6.1"
 }

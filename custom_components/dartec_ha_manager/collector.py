@@ -1,4 +1,4 @@
-"""Snapshot collector — gathers the DarTec health payload from a running
+"""Snapshot collector — gathers the Dartec health payload from a running
 Home Assistant instance every cycle.
 
 Design rule: every section is wrapped in its own try/except so a single

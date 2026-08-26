@@ -1,5 +1,5 @@
-"""DarTec HA Manager agent — links this Home Assistant instance to the
-DarTec centralized fleet dashboard via a single outbound WebSocket."""
+"""Dartec HA Manager agent — links this Home Assistant instance to the
+Dartec centralized fleet dashboard via a single outbound WebSocket."""
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
