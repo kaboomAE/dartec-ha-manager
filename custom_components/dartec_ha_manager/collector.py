@@ -60,12 +60,27 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     return snapshot
 
 
+def _agent_version() -> str | None:
+    """Our own version, read from the manifest — lets the fleet view show
+    which homes are running an outdated agent."""
+    try:
+        import json
+        from pathlib import Path
+
+        manifest = json.loads((Path(__file__).parent / "manifest.json")
+                              .read_text(encoding="utf-8"))
+        return manifest.get("version")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _collect_core(hass: HomeAssistant) -> dict:
     try:
         from homeassistant.const import __version__ as ha_version
 
         return {
             "version": ha_version,
+            "agent_version": _agent_version(),
             "location_name": hass.config.location_name,
             "installation_type": "Home Assistant OS" if os.environ.get("SUPERVISOR_TOKEN")
                                  else "Container/Core",

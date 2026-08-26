@@ -79,5 +79,57 @@ async def branding_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return await _apply(hass, cmd)
 
 
+AGENT_REPO = "kaboomAE/dartec-ha-manager"
+
+
+async def agent_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """Update this integration to the latest release, then restart HA so the
+    new code loads.
+
+    The restart is what makes this genuinely 'forced' — HACS only downloads
+    files; a Python integration keeps running the version already imported
+    until the process restarts. The reply is sent BEFORE restarting, because
+    a restart drops this websocket and the manager would otherwise record a
+    timeout for a command that actually succeeded.
+    """
+    from .hacs_cmds import hacs_install
+
+    installed = await hacs_install(hass, {"repo": AGENT_REPO, "category": "integration",
+                                          "only_if_missing": False})
+    if not installed.get("ok"):
+        return {"ok": False, "detail": f"update failed: {installed.get('detail')}"}
+
+    if cmd.get("restart", True):
+        async def _restart_soon() -> None:
+            import asyncio
+            await asyncio.sleep(2)          # let the command_result reach the manager
+            await hass.services.async_call("homeassistant", "restart", {}, blocking=False)
+
+        hass.async_create_background_task(_restart_soon(), name="dartec_agent_restart")
+        return {"ok": True, "detail": f"{installed.get('detail')}; restarting Home Assistant now",
+                "restarting": True}
+    return {"ok": True, "detail": f"{installed.get('detail')}; restart required to load it"}
+
+
+async def ha_restart(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """Restart Home Assistant Core. Config is checked first — restarting into
+    a broken configuration is the one way this leaves a customer offline."""
+    check = await call_own_rest(hass, "POST", "/api/config/core/check_config", {})
+    body = check.get("body") or {}
+    if isinstance(body, dict) and body.get("result") == "invalid":
+        return {"ok": False,
+                "detail": f"refusing to restart: configuration is invalid — {body.get('errors')}"}
+
+    async def _restart_soon() -> None:
+        import asyncio
+        await asyncio.sleep(2)
+        await hass.services.async_call("homeassistant", "restart", {}, blocking=False)
+
+    hass.async_create_background_task(_restart_soon(), name="dartec_ha_restart")
+    return {"ok": True, "detail": "configuration valid; restarting Home Assistant",
+            "restarting": True}
+
+
 HANDLERS = {"theme_set": theme_set, "automation_create": automation_create,
-            "branding_set": branding_set}
+            "branding_set": branding_set, "agent_update": agent_update,
+            "ha_restart": ha_restart}

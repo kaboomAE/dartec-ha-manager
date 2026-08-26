@@ -28,6 +28,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
     from .home_cmds import HANDLERS as HOME_HANDLERS
     from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
     from .registry_cmds import HANDLERS as REGISTRY_HANDLERS
+    from .tunnel_cmds import HANDLERS as TUNNEL_HANDLERS
+    from .user_cmds import HANDLERS as USER_HANDLERS
 
     action = cmd.get("action")
     try:
@@ -43,6 +45,10 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             return await HOME_HANDLERS[action](hass, cmd)
         if action in REGISTRY_HANDLERS:
             return await REGISTRY_HANDLERS[action](hass, cmd)
+        if action in USER_HANDLERS:
+            return await USER_HANDLERS[action](hass, cmd)
+        if action in TUNNEL_HANDLERS:
+            return await TUNNEL_HANDLERS[action](hass, cmd)
         return {"ok": False, "detail": f"unsupported action '{action}'"}
     except Exception as err:  # noqa: BLE001 — always answer the cloud, never raise
         _LOGGER.warning("Command %s failed: %s", action, err)
