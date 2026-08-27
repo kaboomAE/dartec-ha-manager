@@ -16,6 +16,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .version import is_older, parse
 from .ws_bridge import call_own_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,7 +61,10 @@ async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         for _ in range(10):
             await asyncio.sleep(3)
             entry = await _repo_entry(hass, repo)
-            if entry:
+            # Wait for the version too: an entry that exists but has no
+            # available_version yet is the state in which the downgrade guard
+            # below has nothing to compare against.
+            if entry and entry.get("available_version"):
                 break
         if entry is None:
             return {"ok": False, "detail": f"{repo} added but did not appear in HACS in time"}
@@ -83,9 +87,40 @@ async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         _LOGGER.debug("HACS refresh for %s failed; using cached index", repo)
 
     available = entry.get("available_version")
-    if installed and available and installed == available:
-        return {"ok": True, "detail": f"{repo} already up to date ({installed})",
-                "installed_version": installed}
+
+    # What is really on this home is the NEWER of what HACS recorded and what
+    # the caller read off disk. Neither alone is trustworthy: a repository HACS
+    # was only just told about reports installed_version None though the files
+    # are already there, and once it has downloaded once its record still
+    # trails anything copied in by hand afterwards. Establish this BEFORE
+    # deciding anything — comparing HACS's record alone reports a home as "up
+    # to date" at a version it is not running.
+    floor = installed
+    claimed = cmd.get("current_version")
+    if claimed and (floor is None or is_older(floor, claimed)):
+        floor = claimed
+
+    if floor and not cmd.get("allow_downgrade"):
+        if parse(available) is None:
+            # HACS populates release metadata asynchronously after a repository
+            # is added, so "no version yet" is a normal transient state. Acting
+            # on it would mean downloading an unknown version over a known one.
+            return {"ok": False, "changed": False, "installed_version": floor,
+                    "detail": f"HACS has not reported a version for {repo} yet; "
+                              f"this home runs {floor}. Try again in a moment."}
+        # Never quietly replace a home's code with something older. HACS offers
+        # the latest *release*, which can trail a hand-installed build — and
+        # for an integration this command also restarts Home Assistant, so an
+        # accidental downgrade costs an outage and silently removes fixes.
+        if is_older(available, floor):
+            return {"ok": False, "changed": False, "installed_version": floor,
+                    "detail": f"refusing to downgrade {repo}: this home runs {floor} "
+                              f"and the newest release is {available}"}
+
+    # Compare by value so "v0.10.3" and "0.10.3" are one version, not two.
+    if floor and available and parse(floor) == parse(available):
+        return {"ok": True, "changed": False, "installed_version": floor,
+                "detail": f"{repo} already up to date ({floor})"}
 
     downloaded = await call_own_ws(hass, {"type": "hacs/repository/download",
                                           "repository": entry.get("id")}, timeout=180)
@@ -95,7 +130,7 @@ async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
 
     entry = await _repo_entry(hass, repo) or entry
     version = entry.get("installed_version") or available
-    return {"ok": True, "installed_version": version,
+    return {"ok": True, "changed": True, "installed_version": version,
             "detail": f"installed {repo} {version}"
                       + (" — restart Home Assistant to load it" if category == "integration" else "")}
 

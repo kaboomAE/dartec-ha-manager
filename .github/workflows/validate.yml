@@ -33,3 +33,16 @@ jobs:
           # HACS default-store inclusion, not for custom-repository installs.
           # Remove this ignore once that PR lands.
           ignore: brands
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      # Only the pieces that carry no Home Assistant imports — enough to cover
+      # the version comparison that decides whether a home gets overwritten
+      # with older code.
+      - run: python -m pytest tests -q
