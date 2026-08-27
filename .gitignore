@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Stray SQLite file created by running a server command from this directory.
+# The agent has no database of its own; its state lives in the HA config entry.
+*.db
+*.db-wal
+*.db-shm

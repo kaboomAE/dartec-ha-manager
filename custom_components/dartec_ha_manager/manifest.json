@@ -5,6 +5,10 @@
     "@kaboomAE"
   ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
   "documentation": "https://github.com/kaboomAE/dartec-ha-manager",
   "integration_type": "service",
   "iot_class": "cloud_push",
