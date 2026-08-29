@@ -1,0 +1,24 @@
+allow_maintenance:
+  name: "Dartec: allow maintenance"
+  description: >-
+    Let Dartec support perform sensitive operations in this home — locks,
+    covers, alarm, climate, reboots and account changes — for a limited time.
+    Everything done during the window is written to your logbook. Closes
+    automatically when it expires, and on any Home Assistant restart.
+  fields:
+    minutes:
+      name: Duration
+      description: How long the window stays open.
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 480
+          unit_of_measurement: minutes
+          mode: box
+
+end_maintenance:
+  name: "Dartec: end maintenance"
+  description: >-
+    Close the maintenance window immediately. Routine monitoring continues;
+    only sensitive operations stop being possible.

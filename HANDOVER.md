@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.10.4
+**Current version**: 0.11.0
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -242,12 +242,21 @@ check.
 | 0.10.2 | Backups work on Container installs |
 | 0.10.3 | Accurate offsite copy size |
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
+| 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 
 ---
 
 ## 9. Open items
 
 - **The real home runs 0.10.3**; 0.10.4 is released and not yet deployed there.
+- **0.11.0 is committed but NOT released or tagged.** The manifest says
+  0.11.0; until a GitHub release exists, Fleet maintenance would install an
+  older asset over it — the exact trap 0.10.4 fell into above. Cut the
+  release before triggering any update.
+- **Roll 0.11.0 out before relying on the window.** `agent_update` is itself
+  gated by the maintenance window, but homes still on 0.10.x have no gate,
+  so this update installs without one. Every update *after* it needs the
+  homeowner to open a window first.
 - **`hacs.json` has no `homeassistant` floor above 2024.6.0** — revisit if a
   newer core API gets used.
 - **The `brands` check is ignored in CI.** Listing in the HACS default store
