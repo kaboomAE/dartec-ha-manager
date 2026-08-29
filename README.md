@@ -2,6 +2,10 @@
 
 The Home Assistant integration that links an HA instance to [Dartec HA Manager](https://manager.dartec.ae), Dartec's centralized fleet-management dashboard for smart homes.
 
+> **Maintaining this integration?** See [HANDOVER.md](HANDOVER.md) — module
+> map, the release process (HACS installs *Releases*, not tags), CI, and the
+> gotchas that cost real debugging time.
+
 ## What it does
 
 - Opens a single **outbound** encrypted WebSocket to the Dartec cloud — no port forwarding, no VPN, no exposed services.
