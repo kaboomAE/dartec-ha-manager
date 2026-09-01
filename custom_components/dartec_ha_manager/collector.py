@@ -29,7 +29,7 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["integrations"] = _collect_integrations(hass)
     snapshot["automations"] = _collect_automations(hass)
     snapshot["dashboards"] = _collect_dashboards(hass)
-    snapshot["logs"] = _collect_logs(hass)
+    snapshot["logs"], snapshot["log_total"] = _collect_logs(hass)
     snapshot["hacs"] = _collect_hacs(hass)
     snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
@@ -124,22 +124,101 @@ def _collect_integrations(hass: HomeAssistant) -> list[dict]:
     return entries
 
 
+# The snapshot is a 60-second heartbeat, not a database dump: an uncapped
+# registry from a large home would be megabytes on the wire every minute. The
+# caps below are therefore deliberate, and the true totals travel alongside the
+# truncated lists so nothing downstream can mistake a page for the whole thing.
+# Reaching past the cap is what the registry_query command is for.
 MAX_DEVICES = 600
 MAX_ENTITIES = 2500
 
 
+def registry_context(hass: HomeAssistant) -> dict:
+    """The lookups a device or entity row needs, built once.
+
+    Shared by the snapshot collector and the on-demand registry_query command
+    so the two produce identical rows — the manager renders them through the
+    same table either way, and drift between them would show up as columns
+    that mysteriously empty out once you page past the snapshot.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+
+    entities_per_device: dict[str, int] = {}
+    for reg in entities.entities.values():
+        if reg.device_id:
+            entities_per_device[reg.device_id] = entities_per_device.get(reg.device_id, 0) + 1
+
+    return {
+        "area_names": {area.id: area.name for area in ar.async_get(hass).async_list_areas()},
+        "entities_per_device": entities_per_device,
+        "device_area_id": {device.id: device.area_id for device in devices.devices.values()},
+        "devices": devices,
+        "entities": entities,
+    }
+
+
+def device_row(device, ctx: dict) -> dict:
+    area_names = ctx["area_names"]
+    return {
+        "id": device.id,
+        "name": device.name_by_user or device.name,
+        "manufacturer": device.manufacturer,
+        "model": device.model,
+        "sw_version": device.sw_version,
+        "hw_version": device.hw_version,
+        "area": area_names.get(device.area_id) if device.area_id else None,
+        "via_device": bool(device.via_device_id),
+        "disabled": device.disabled_by is not None,
+        "entry_type": str(device.entry_type) if device.entry_type else None,
+        "connections": sorted({conn_type for conn_type, _ in (device.connections or set())}),
+        "integrations": sorted(device.identifiers and {ident[0] for ident in device.identifiers} or set()),
+        "entity_count": ctx["entities_per_device"].get(device.id, 0),
+    }
+
+
+def entity_row(reg, ctx: dict, hass: HomeAssistant) -> dict:
+    state = hass.states.get(reg.entity_id)
+    # HA semantics: an entity belongs to its own area if set, otherwise to its
+    # device's area. Reading only entity.area_id under-reports badly — on a
+    # real 253-device home it missed 1265 entities.
+    area_id = reg.area_id or ctx["device_area_id"].get(reg.device_id)
+    return {
+        "entity_id": reg.entity_id,
+        "name": reg.name or reg.original_name,
+        "domain": reg.domain,
+        "platform": reg.platform,
+        "device_class": reg.device_class or reg.original_device_class,
+        "area": ctx["area_names"].get(area_id) if area_id else None,
+        "device_id": reg.device_id,
+        # "config"/"diagnostic" entities are plumbing, not things a resident
+        # wants on a dashboard — the compiler filters on this.
+        "entity_category": str(reg.entity_category.value)
+                           if getattr(reg.entity_category, "value", None)
+                           else (str(reg.entity_category) if reg.entity_category else None),
+        "disabled": reg.disabled_by is not None,
+        "hidden": reg.hidden_by is not None,
+        "state": state.state if state else None,
+    }
+
+
 def _collect_registries(hass: HomeAssistant) -> dict:
     """Devices, entities and areas from the registries — powers the Devices and
-    Entities tabs and (later) per-home dashboard generation. Capped so a very
-    large home cannot produce an unbounded snapshot."""
+    Entities tabs and per-home dashboard generation.
+
+    Capped, with `device_count` / `entity_registry_count` carrying the real
+    totals. The manager uses the gap between the two to tell an operator it is
+    looking at a page, and offers the live query to reach the rest.
+    """
     out: dict[str, Any] = {"devices": [], "entities": [], "areas": []}
     try:
         from homeassistant.helpers import area_registry as ar
-        from homeassistant.helpers import device_registry as dr
-        from homeassistant.helpers import entity_registry as er
 
         areas = ar.async_get(hass)
-        area_names = {area.id: area.name for area in areas.async_list_areas()}
         out["areas"] = [{"id": area.id, "name": area.name,
                          "floor_id": getattr(area, "floor_id", None),
                          "icon": getattr(area, "icon", None),
@@ -159,60 +238,15 @@ def _collect_registries(hass: HomeAssistant) -> dict:
             _LOGGER.debug("floor registry collect failed: %s", err)
             out["floors"] = []
 
-        devices = dr.async_get(hass)
-        entities = er.async_get(hass)
+        ctx = registry_context(hass)
 
-        entities_per_device: dict[str, int] = {}
-        for reg in entities.entities.values():
-            if reg.device_id:
-                entities_per_device[reg.device_id] = entities_per_device.get(reg.device_id, 0) + 1
-
-        device_list = list(devices.devices.values())
+        device_list = list(ctx["devices"].devices.values())
         out["device_count"] = len(device_list)
-        for device in device_list[:MAX_DEVICES]:
-            out["devices"].append({
-                "id": device.id,
-                "name": device.name_by_user or device.name,
-                "manufacturer": device.manufacturer,
-                "model": device.model,
-                "sw_version": device.sw_version,
-                "hw_version": device.hw_version,
-                "area": area_names.get(device.area_id) if device.area_id else None,
-                "via_device": bool(device.via_device_id),
-                "disabled": device.disabled_by is not None,
-                "entry_type": str(device.entry_type) if device.entry_type else None,
-                "connections": sorted({conn_type for conn_type, _ in (device.connections or set())}),
-                "integrations": sorted(device.identifiers and {ident[0] for ident in device.identifiers} or set()),
-                "entity_count": entities_per_device.get(device.id, 0),
-            })
+        out["devices"] = [device_row(device, ctx) for device in device_list[:MAX_DEVICES]]
 
-        device_area_id = {device.id: device.area_id for device in device_list}
-
-        entity_list = list(entities.entities.values())
+        entity_list = list(ctx["entities"].entities.values())
         out["entity_registry_count"] = len(entity_list)
-        for reg in entity_list[:MAX_ENTITIES]:
-            state = hass.states.get(reg.entity_id)
-            # HA semantics: an entity belongs to its own area if set, otherwise
-            # to its device's area. Reading only entity.area_id under-reports
-            # badly — on a real 253-device home it missed 1265 entities.
-            area_id = reg.area_id or device_area_id.get(reg.device_id)
-            out["entities"].append({
-                "entity_id": reg.entity_id,
-                "name": reg.name or reg.original_name,
-                "domain": reg.domain,
-                "platform": reg.platform,
-                "device_class": reg.device_class or reg.original_device_class,
-                "area": area_names.get(area_id) if area_id else None,
-                "device_id": reg.device_id,
-                # "config"/"diagnostic" entities are plumbing, not things a
-                # resident wants on a dashboard — the compiler filters on this.
-                "entity_category": str(reg.entity_category.value)
-                                   if getattr(reg.entity_category, "value", None)
-                                   else (str(reg.entity_category) if reg.entity_category else None),
-                "disabled": reg.disabled_by is not None,
-                "hidden": reg.hidden_by is not None,
-                "state": state.state if state else None,
-            })
+        out["entities"] = [entity_row(reg, ctx, hass) for reg in entity_list[:MAX_ENTITIES]]
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("registry collect failed: %s", err)
     return out
@@ -291,14 +325,27 @@ def _collect_dashboards(hass: HomeAssistant) -> list[dict]:
     return dashboards
 
 
-def _collect_logs(hass: HomeAssistant) -> list[dict]:
-    """BEST-EFFORT: reads the system_log component's deduplicated record store."""
+MAX_LOG_RECORDS = 50
+
+
+def _collect_logs(hass: HomeAssistant) -> tuple[list[dict], int]:
+    """BEST-EFFORT: reads the system_log component's deduplicated record store.
+
+    Returns the newest records and the true count, because "50 errors" and
+    "the last 50 of 214 errors" are very different things to read on a
+    dashboard.
+    """
     records = []
+    out_total = 0
     try:
         handler = hass.data.get("system_log")
         store = getattr(handler, "records", None)
         if store:
-            for entry in list(store.values())[-50:]:
+            all_records = list(store.values())
+            # Reported so the manager can say "last 50 of 214" rather than
+            # implying the home only ever logged 50 things.
+            out_total = len(all_records)
+            for entry in all_records[-MAX_LOG_RECORDS:]:
                 as_dict = entry.to_dict() if hasattr(entry, "to_dict") else {}
                 records.append({
                     "level": as_dict.get("level"),
@@ -309,7 +356,7 @@ def _collect_logs(hass: HomeAssistant) -> list[dict]:
                 })
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("logs collect failed: %s", err)
-    return records
+    return records, out_total
 
 
 def _collect_hacs(hass: HomeAssistant) -> list[dict]:

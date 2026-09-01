@@ -22,6 +22,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .registry_paging import DEFAULT_PAGE, paginate_rows
 from .ws_bridge import call_own_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -159,6 +160,44 @@ async def entities_assign(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             "failed": len(failed), "detail": detail}
 
 
+
+# --- reading the registry, a page at a time ----------------------------------
+# The snapshot caps devices at 600 and entities at 2500 because it is sent
+# every 60 seconds. That cap is right for a heartbeat and wrong for browsing:
+# a home with 4000 entities had 1500 of them simply unreachable from the
+# manager, and the UI could not even say so, because it only knew about the
+# rows it had been handed.
+#
+# This serves the live registry instead — filtered, counted and sliced here,
+# where the whole thing is in memory anyway, so the manager pages through the
+# real list rather than through a truncated copy of it.
+
+async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """One page of the live device or entity registry.
+
+    A read, so it is routine under the service policy: no maintenance window,
+    and it stays available while a home is change-frozen, because looking is
+    not changing.
+    """
+    from .collector import device_row, entity_row, registry_context
+
+    kind = str(cmd.get("kind") or "entities")
+    if kind not in ("entities", "devices"):
+        return _fail(f"unknown registry kind '{kind}'")
+
+    ctx = registry_context(hass)
+    if kind == "entities":
+        rows = [entity_row(reg, ctx, hass) for reg in ctx["entities"].entities.values()]
+    else:
+        rows = [device_row(device, ctx) for device in ctx["devices"].devices.values()]
+
+    return paginate_rows(
+        rows, kind,
+        query=cmd.get("query") or "", domain=cmd.get("domain") or "",
+        status=cmd.get("status") or "all", area=cmd.get("area") or "",
+        offset=cmd.get("offset") or 0, limit=cmd.get("limit") or DEFAULT_PAGE)
+
+
 HANDLERS = {
     "floor_upsert": floor_upsert,
     "floor_delete": floor_delete,
@@ -166,4 +205,5 @@ HANDLERS = {
     "area_delete": area_delete,
     "devices_assign": devices_assign,
     "entities_assign": entities_assign,
+    "registry_query": registry_query,
 }
