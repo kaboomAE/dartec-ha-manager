@@ -107,6 +107,11 @@ def _collect_integrations(hass: HomeAssistant) -> list[dict]:
 
         for entry in hass.config_entries.async_entries():
             entries.append({
+                # The stable identity of this integration. A title can be
+                # renamed by the household at any time; the entry id cannot,
+                # and it is what the manager keys an incident on so a rename
+                # does not read as "one fault resolved, another appeared".
+                "entry_id": entry.entry_id,
                 "domain": entry.domain,
                 "title": entry.title,
                 "state": entry.state.value if hasattr(entry.state, "value") else str(entry.state),
