@@ -198,6 +198,51 @@ async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         offset=cmd.get("offset") or 0, limit=cmd.get("limit") or DEFAULT_PAGE)
 
 
+
+async def signal_enable(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """Switch on the signal-strength entities an integration disabled.
+
+    ZHA creates RSSI sensors disabled by default, so on a typical home most of
+    them are off and the manager has no idea how well anything is heard. This
+    is a commissioning step rather than something to run repeatedly: enabling
+    an entity makes Home Assistant start recording it, which costs a little
+    database and is worth it once.
+
+    Per-entity fault tolerant, like the assignment commands: one entity that
+    refuses reports itself and the rest still apply, because a half-finished
+    run that aborted silently would be worse than one that says which failed.
+    """
+    from .signal_health import disabled_signal_entities
+
+    wanted = cmd.get("entity_ids")
+    if not wanted:
+        wanted = disabled_signal_entities(hass)
+    wanted = list(wanted)[:400]
+    if not wanted:
+        return {"ok": True, "enabled": 0,
+                "detail": "every signal sensor on this home is already on"}
+
+    done, failed = 0, []
+    for entity_id in wanted:
+        result = await call_own_ws(hass, {
+            "type": "config/entity_registry/update",
+            "entity_id": entity_id, "disabled_by": None})
+        if result.get("success"):
+            done += 1
+        else:
+            failed.append(f"{entity_id}: {(result.get('error') or {}).get('message', 'failed')}")
+
+    detail = f"enabled {done} signal sensor(s)"
+    if failed:
+        detail += f"; {len(failed)} failed ({'; '.join(failed[:3])})"
+    # Home Assistant only starts polling a newly enabled entity after a
+    # restart of its config entry, so the first readings can be a few minutes
+    # away. Said here rather than leaving an operator wondering.
+    detail += ". Readings appear once each integration reloads."
+    return {"ok": done > 0 or not failed, "enabled": done,
+            "failed": len(failed), "detail": detail}
+
+
 HANDLERS = {
     "floor_upsert": floor_upsert,
     "floor_delete": floor_delete,
@@ -206,4 +251,5 @@ HANDLERS = {
     "devices_assign": devices_assign,
     "entities_assign": entities_assign,
     "registry_query": registry_query,
+    "signal_enable": signal_enable,
 }

@@ -15,6 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from . import signal_health
 from .hardware import async_collect_hardware
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,6 +31,11 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["automations"] = _collect_automations(hass)
     snapshot["dashboards"] = _collect_dashboards(hass)
     snapshot["logs"], snapshot["log_total"] = _collect_logs(hass)
+    # How well each device is heard. Cheap — one pass over the states machine
+    # — and it is the data that answers "is anything about to drop off?"
+    # without any mesh topology at all.
+    snapshot["signal"] = signal_health.collect_signal(hass)
+    snapshot["signal_disabled"] = signal_health.disabled_signal_entities(hass)
     snapshot["hacs"] = _collect_hacs(hass)
     snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
