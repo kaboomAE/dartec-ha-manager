@@ -243,6 +243,20 @@ async def signal_enable(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             "failed": len(failed), "detail": detail}
 
 
+
+async def mesh_map(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """The Zigbee mesh's shape: which node routes through which, and how well.
+
+    Deliberately a command rather than part of the 60-second snapshot. A
+    Zigbee2MQTT network scan asks every router for its routing tables, which
+    floods the mesh with requests — it is the kind of measurement that degrades
+    what it is measuring, so it runs when someone asks and not on a timer.
+    """
+    from .mesh import collect_mesh
+
+    return await collect_mesh(hass, cmd.get("stacks"))
+
+
 HANDLERS = {
     "floor_upsert": floor_upsert,
     "floor_delete": floor_delete,
@@ -252,4 +266,5 @@ HANDLERS = {
     "entities_assign": entities_assign,
     "registry_query": registry_query,
     "signal_enable": signal_enable,
+    "mesh_map": mesh_map,
 }

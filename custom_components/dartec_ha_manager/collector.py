@@ -182,6 +182,13 @@ def device_row(device, ctx: dict) -> dict:
         "disabled": device.disabled_by is not None,
         "entry_type": str(device.entry_type) if device.entry_type else None,
         "connections": sorted({conn_type for conn_type, _ in (device.connections or set())}),
+        # The addresses, not just their kinds. A Zigbee mesh reports nodes by
+        # IEEE address and Home Assistant reports devices by registry id;
+        # without this pair there is no way to say which node in the mesh is
+        # the device a plan line called for, which is the whole point of
+        # collecting topology at all.
+        "connection_ids": sorted({f"{kind}:{value}" for kind, value
+                                  in (device.connections or set())})[:8],
         "integrations": sorted(device.identifiers and {ident[0] for ident in device.identifiers} or set()),
         "entity_count": ctx["entities_per_device"].get(device.id, 0),
     }
