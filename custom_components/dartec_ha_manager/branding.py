@@ -31,6 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 URL_BASE = "/dartec_branding"
 JS_PATH = f"{URL_BASE}/branding.js"
 CONFIG_PATH = f"{URL_BASE}/config.json"
+DASHBOARD_FIX_PATH = f"{URL_BASE}/dashboard-fix.js"
 
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
@@ -320,6 +321,14 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
     # stamp here would go stale the moment branding changed. Freshness comes
     # from the view's Cache-Control: no-cache instead — the payload is ~4 KB.
     add_extra_js_url(hass, JS_PATH)
+
+    # A separate, static module that makes the Dwains dashboard's notification
+    # panel readable on a dark theme — it hardcodes a white row background with
+    # no variable to override, so a theme cannot reach it. Injected here rather
+    # than given its own registration because it rides the same static path and
+    # the same mechanism; it carries no configuration and does nothing on homes
+    # that do not run that dashboard. See www/dashboard-fix.js.
+    add_extra_js_url(hass, DASHBOARD_FIX_PATH)
     hass.data[f"{__name__}.registered"] = True
 
 
