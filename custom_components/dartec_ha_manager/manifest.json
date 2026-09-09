@@ -1,6 +1,9 @@
 {
   "domain": "dartec_ha_manager",
   "name": "Dartec HA Manager",
+  "after_dependencies": [
+    "mqtt"
+  ],
   "codeowners": [
     "@kaboomAE"
   ],
