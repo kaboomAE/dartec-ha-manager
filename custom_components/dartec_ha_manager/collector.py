@@ -36,6 +36,12 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # without any mesh topology at all.
     snapshot["signal"] = signal_health.collect_signal(hass)
     snapshot["signal_disabled"] = signal_health.disabled_signal_entities(hass)
+    # Which phones this home can actually push to. Cheap (a dict lookup, no
+    # I/O) and it is the difference between a Live Activity appearing on a
+    # lock screen and nothing happening at all: the notify action name is
+    # derived from the device name the companion app registered, which
+    # nothing else in this snapshot states outright.
+    snapshot["notify_targets"] = _collect_notify_targets(hass)
     snapshot["hacs"] = _collect_hacs(hass)
     snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
@@ -217,6 +223,25 @@ def entity_row(reg, ctx: dict, hass: HomeAssistant) -> dict:
         "hidden": reg.hidden_by is not None,
         "state": state.state if state else None,
     }
+
+
+def _collect_notify_targets(hass: HomeAssistant) -> list[str]:
+    """Every `notify.*` action registered on this home, action name only.
+
+    The companion app registers one per paired device, named after the device
+    name chosen at setup — `notify.mobile_app_kaboom` for a phone whose
+    entities are `sensor.kaboom_*`. That correspondence is conventional rather
+    than guaranteed, which is exactly why this reads the real service registry
+    instead of rebuilding the name from an entity id.
+
+    Names only. A service's schema and description are large, change between
+    releases, and answer nothing anyone asks here.
+    """
+    try:
+        return sorted(hass.services.async_services().get("notify", {}))
+    except Exception as err:  # noqa: BLE001 — best-effort, like every collector
+        _LOGGER.debug("notify target collect failed: %s", err)
+        return []
 
 
 def _collect_registries(hass: HomeAssistant) -> dict:
