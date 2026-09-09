@@ -86,7 +86,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         if action in SENSITIVE_ACTIONS and not window_open:
             return _refuse(hass, str(action),
                            f"'{action}' needs an open maintenance window. Ask the "
-                           "homeowner to run 'Dartec: allow maintenance'.")
+                           "homeowner to switch 'Allow Dartec support' on, or "
+                           "request one from the manager.")
 
         if action in _ADDON_ACTIONS:
             result = await _addon_action(hass, cmd.get("addon_slug", ""),

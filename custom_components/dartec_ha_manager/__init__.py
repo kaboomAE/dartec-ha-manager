@@ -3,12 +3,18 @@ Dartec centralized fleet dashboard via a single outbound WebSocket."""
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from . import maintenance
 from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
+
+# The switch that lets a homeowner grant and revoke Dartec's access to the
+# sensitive operations. It is the only entity this integration creates, and
+# the only control in it a customer is expected to touch.
+PLATFORMS = [Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -20,6 +26,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # house can open. Registering these is what makes that consent possible.
     await maintenance.async_register_services(hass)
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     link = CloudLink(hass, entry.data[CONF_SERVER_URL], entry.data[CONF_PAIRING_TOKEN])
     link.start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
@@ -27,6 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     await maintenance.async_unregister_services(hass)
     link: CloudLink | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if link:

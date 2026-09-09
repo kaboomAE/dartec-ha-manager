@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN
 
@@ -34,7 +35,18 @@ MAX_MINUTES = 480
 
 _STATE_KEY = "_maintenance_until"
 _REGISTERED_KEY = "_maintenance_services_registered"
+_CANCEL_KEY = "_maintenance_expiry_cancel"
 _NOTIFY_ID = "dartec_maintenance_window"
+
+# Anything showing the window's state listens for this. Without it a switch
+# would only notice the window closing when something happened to poll it,
+# which for a 60-minute window means minutes of showing the wrong thing.
+SIGNAL_UPDATE = f"{DOMAIN}_maintenance_updated"
+
+# What the homeowner sees and touches. Named as an instruction rather than a
+# state ("Allow Dartec support" reads as a thing you grant) because the whole
+# point is that someone who has never opened Developer Tools can work it.
+SWITCH_NAME = "Allow Dartec support"
 
 ALLOW_SCHEMA = vol.Schema({
     vol.Optional("minutes", default=DEFAULT_MINUTES):
@@ -83,6 +95,49 @@ def _notify(hass: HomeAssistant, title: str, message: str) -> None:
         _LOGGER.debug("Could not raise notification: %s", err)
 
 
+def _notify_update(hass: HomeAssistant) -> None:
+    try:
+        async_dispatcher_send(hass, SIGNAL_UPDATE)
+    except Exception as err:  # noqa: BLE001 — never let the display break the gate
+        _LOGGER.debug("Could not signal maintenance update: %s", err)
+
+
+def _cancel_expiry(hass: HomeAssistant) -> None:
+    cancel = _store(hass).pop(_CANCEL_KEY, None)
+    if cancel:
+        try:
+            cancel()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not cancel expiry timer: %s", err)
+
+
+def _schedule_expiry(hass: HomeAssistant, until: datetime) -> None:
+    """Close the window at its own deadline.
+
+    ``is_open`` already compares against the clock, so the gate is correct
+    without this. What this adds is that the *switch* turns itself off at the
+    right moment instead of when something next happens to look — a homeowner
+    watching a toggle that still says "on" twenty minutes after the window
+    expired has been told something false about who can reach their locks.
+    """
+    from homeassistant.helpers.event import async_track_point_in_utc_time
+
+    _cancel_expiry(hass)
+
+    def _expired(_now) -> None:
+        _store(hass).pop(_CANCEL_KEY, None)
+        if not is_open(hass):
+            logbook(hass, "Maintenance window expired")
+            _dismiss(hass)
+            _notify_update(hass)
+
+    try:
+        _store(hass)[_CANCEL_KEY] = async_track_point_in_utc_time(
+            hass, _expired, until)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Could not schedule expiry: %s", err)
+
+
 def _dismiss(hass: HomeAssistant) -> None:
     try:
         from homeassistant.components import persistent_notification
@@ -98,10 +153,12 @@ def open_window(hass: HomeAssistant, minutes: int = DEFAULT_MINUTES) -> dict:
     _store(hass)[_STATE_KEY] = until
     logbook(hass, f"Maintenance window opened for {minutes} minutes — Dartec "
                   "support may now perform sensitive operations")
-    _notify(hass, "Dartec maintenance window open",
-            f"Dartec support can perform sensitive operations (locks, covers, "
-            f"alarm, reboots) for the next {minutes} minutes. Run the "
-            f"'{DOMAIN}.{SERVICE_END}' service to end it immediately.")
+    _notify(hass, "Dartec support access is on",
+            f"Dartec can now operate locks, covers, the alarm and restarts in "
+            f"your home. This ends by itself in {minutes} minutes.\n\n"
+            f"To end it now, switch **{SWITCH_NAME}** off.")
+    _schedule_expiry(hass, until)
+    _notify_update(hass)
     _LOGGER.info("Maintenance window opened for %s minutes", minutes)
     return status(hass)
 
@@ -109,10 +166,12 @@ def open_window(hass: HomeAssistant, minutes: int = DEFAULT_MINUTES) -> dict:
 def close_window(hass: HomeAssistant) -> dict:
     was_open = is_open(hass)
     _store(hass)[_STATE_KEY] = None
+    _cancel_expiry(hass)
     if was_open:
         logbook(hass, "Maintenance window closed")
         _LOGGER.info("Maintenance window closed")
     _dismiss(hass)
+    _notify_update(hass)
     return status(hass)
 
 
@@ -139,6 +198,7 @@ async def async_unregister_services(hass: HomeAssistant) -> None:
         return
     hass.services.async_remove(DOMAIN, SERVICE_ALLOW)
     hass.services.async_remove(DOMAIN, SERVICE_END)
+    _cancel_expiry(hass)
     store[_REGISTERED_KEY] = False
     store[_STATE_KEY] = None
 
@@ -146,12 +206,14 @@ async def async_unregister_services(hass: HomeAssistant) -> None:
 def request_window(hass: HomeAssistant, reason: str = "") -> dict:
     """The cloud asking the homeowner to open a window. Raises a notification
     in the house; grants nothing."""
-    detail = f"\n\nReason given: {reason}" if reason else ""
-    _notify(hass, "Dartec support needs permission",
-            "Dartec support has asked to perform a sensitive operation in your "
-            f"home (locks, covers, alarm, reboots or account changes).{detail}"
-            f"\n\nTo allow it, run the '{DOMAIN}.{SERVICE_ALLOW}' service. It "
-            "expires automatically.")
+    detail = f"\n\nWhy: {reason}" if reason else ""
+    _notify(hass, "Dartec is asking for permission",
+            "Dartec support wants to operate locks, covers, the alarm or "
+            f"restarts in your home.{detail}"
+            f"\n\nTo allow it, switch **{SWITCH_NAME}** on. It turns itself "
+            f"off again after {DEFAULT_MINUTES} minutes, and you can switch it "
+            "off sooner at any time.\n\nIf you were not expecting this, "
+            "leave it off — nothing happens until you allow it.")
     logbook(hass, f"Dartec support requested a maintenance window. {reason}".strip())
     return {"ok": True, "detail": "the homeowner has been asked to open a window",
             **status(hass)}
