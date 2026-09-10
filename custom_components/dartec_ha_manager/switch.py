@@ -26,6 +26,15 @@ lapsed tells the owner something false about who can reach their locks.
 
 **It is a switch, not a button.** A button could open a window; only something
 with state can show one is open, and showing it is half the point.
+
+**Its entity id is `switch.allow_dartec_support`, deliberately.** Left to
+itself the platform derives the id from the device and produces
+`switch.dartec_ha_manager_allow_dartec_support`, which stutters "Dartec"
+twice and is not what anyone types when they go looking for it. The first
+person to put this on a dashboard reached for `switch.allow_dartec_support`,
+got nothing, and could not save the card. This is a control a homeowner is
+meant to find, so it is named the way they will look for it — see the
+entity_id line in __init__.
 """
 from __future__ import annotations
 
@@ -48,6 +57,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
 class MaintenanceSwitch(SwitchEntity):
     """Allow Dartec support — on for the length of the window, off otherwise."""
 
+    # has_entity_name is Home Assistant's convention and it earns its keep on
+    # the device page, where this shows as just "Allow Dartec support". It has
+    # no bearing on the entity id, which is set outright below — turning it off
+    # was tried and changed the id not at all.
     _attr_has_entity_name = True
     _attr_name = "Allow Dartec support"
     _attr_icon = "mdi:account-wrench"
@@ -56,6 +69,13 @@ class MaintenanceSwitch(SwitchEntity):
 
     def __init__(self, entry: ConfigEntry) -> None:
         self._entry = entry
+        # Suggest the entity id outright. Turning off has_entity_name was not
+        # enough on its own: the platform still derived the id from the device,
+        # giving switch.dartec_ha_manager_allow_dartec_support. Setting
+        # entity_id here is Home Assistant's supported way for an entity to
+        # propose its own, and it only ever suggests — a collision would still
+        # be resolved with a suffix rather than stealing another entity's id.
+        self.entity_id = "switch.allow_dartec_support"
         self._attr_unique_id = f"{entry.entry_id}_allow_dartec_support"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},

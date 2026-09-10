@@ -64,13 +64,26 @@
     }
   };
 
-  const run = () => sweep(document.body);
+  // Coalesced. A sweep costs well under a millisecond on this page, but the
+  // observer fires on every DOM change and a card editor changes the DOM
+  // constantly — so the work is collapsed to at most one sweep per frame,
+  // and only when nodes were actually added. Measured before this: 340 nodes,
+  // 0.7 ms, zero mutations while idle. It was never the bottleneck; this is
+  // so it can never become one on a busier page than the one I could test.
+  let queued = false;
+  const run = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; sweep(document.body); });
+  };
 
-  run();
+  sweep(document.body);
   try {
-    // Cheap: it only descends until it finds the host, and the tree is small.
-    new MutationObserver(() => run()).observe(document.body,
-      { childList: true, subtree: true });
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.addedNodes && record.addedNodes.length) { run(); return; }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
   } catch (err) {
     // Without an observer, catch the common case of a later mount.
     [400, 1500, 4000].forEach((ms) => setTimeout(run, ms));
