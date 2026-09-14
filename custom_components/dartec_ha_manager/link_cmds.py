@@ -1,27 +1,34 @@
 """Join this home to the Dartec mesh, via the Dartec Link add-on.
 
-HA OS / Supervised only. Named `link_*` rather than `mesh_*` because
-`mesh` already means the Zigbee mesh throughout this integration.
+HA OS / Supervised only. Named `link_*` rather than `mesh_*` because `mesh`
+already means the Zigbee mesh throughout this integration.
 
-The replacement for `tunnel_cmds.py`. That gave the house a public hostname
-through Cloudflare and left a Home Assistant login page on the open internet,
-defended only by the household's own password. This puts the house on a
-private WireGuard network instead, where it has no public address at all.
+The tunnel gave each house a public hostname and left a Home Assistant login
+page on the open internet, defended only by the household's own password. The
+mesh gives it a private address and no public presence at all.
 
-Same shape as the module it replaces -- install an add-on through the
-Supervisor API, configure it with what the manager sent, start it -- because
-the mechanism was never the problem.
+Deliberately does NOT support Container/Core installs: no Supervisor means no
+add-on, and quietly doing something different there would be worse than saying
+no.
 
-Deliberately does NOT support Container/Core installs, for the same reason as
-before: no Supervisor means no add-on, and quietly doing something different
-there would be worse than saying no.
+THE TWO SUPERVISOR ENDPOINTS ARE NOT INTERCHANGEABLE, and confusing them cost
+a day:
 
-One asymmetry worth knowing. With Cloudflare, the manager had to ask the home
-whether the tunnel was up, because only the home could see. Here the manager
-can ask Headscale directly, and Headscale is authoritative about whether a
-node is registered and online. So `mesh_status` here reports only what the
-Supervisor knows -- is the add-on installed, is it running -- and the manager
-does not rely on it to answer "is this home reachable".
+    GET /addons        -> apps that are INSTALLED on this home
+    GET /store/addons  -> apps AVAILABLE from the store, each with `installed`
+
+An add-on that has been published but never installed appears only in the
+second. Looking for it in the first means never finding it, never reaching the
+install call, and reporting "did not appear after adding its repository" about
+a repository that cloned perfectly and an add-on sitting visible in the store.
+The Supervisor log for that failure contains no install line at all, because
+none was ever requested.
+
+One asymmetry worth knowing: with Cloudflare the manager had to ask the home
+whether the tunnel was up. Headscale knows whether a node is registered and
+online without the house answering, so `link_status` here reports only what
+the Supervisor knows, and the manager does not rely on it for "is this home
+reachable" -- the question that matters precisely when the house cannot answer.
 """
 from __future__ import annotations
 
@@ -68,28 +75,35 @@ async def _supervisor(hass: HomeAssistant, method: str, path: str,
         return {"status": resp.status, "body": body}
 
 
-async def _list_addons(hass: HomeAssistant) -> list[dict]:
-    listing = await _supervisor(hass, "GET", "/addons")
+def _data(response: dict) -> dict:
+    return (response.get("body") or {}).get("data") or {}
+
+
+async def _store_apps(hass: HomeAssistant) -> list[dict]:
+    """Everything the store offers, installed or not.
+
+    `/store/addons`, NOT `/addons`. See the module docstring -- this is the
+    distinction the whole thing turned on.
+    """
+    listing = await _supervisor(hass, "GET", "/store/addons")
     if listing.get("_no_supervisor"):
         return []
-    return ((listing.get("body") or {}).get("data") or {}).get("addons") or []
+    data = _data(listing)
+    # v1 answers with "addons"; newer builds also expose "apps".
+    return data.get("addons") or data.get("apps") or []
 
 
 async def _find_addon(hass: HomeAssistant, *, tries: int = 1,
                       delay: float = 4.0) -> dict | None:
-    """The Dartec Link add-on, or None.
+    """The Dartec Link entry from the store, or None.
 
-    `tries` exists because adding a repository is not synchronous with the
-    add-on appearing in it: the Supervisor clones and re-reads the store in
-    the background, and looking immediately afterwards finds nothing. The
-    first version of this asked once and reported "not found after adding its
-    repository", which is indistinguishable from a genuinely broken
-    repository and sent us hunting a config bug that was not there.
+    `tries` because adding a repository is not synchronous with its add-ons
+    appearing: the Supervisor clones and re-reads the store in the background.
     """
     for attempt in range(max(1, tries)):
-        for addon in await _list_addons(hass):
-            if str(addon.get("slug", "")).endswith(DARTEC_LINK_SLUG_SUFFIX):
-                return addon
+        for app in await _store_apps(hass):
+            if str(app.get("slug", "")).endswith(DARTEC_LINK_SLUG_SUFFIX):
+                return app
         if attempt + 1 < tries:
             await asyncio.sleep(delay)
     return None
@@ -98,27 +112,27 @@ async def _find_addon(hass: HomeAssistant, *, tries: int = 1,
 async def _store_diagnostics(hass: HomeAssistant) -> str:
     """What the Supervisor actually has, for when the add-on is missing.
 
-    A failure that says only "not found" forces the next person to guess.
-    This turns it into evidence: which repositories are registered, and which
-    add-on slugs exist. If our repository is absent the problem is the add;
-    if it is present but has no add-ons the problem is the repository's
-    contents.
+    A failure that says only "not found" forces the next person to guess. If
+    our repository is absent the problem is the add; if it is present but
+    offers no Dartec add-on, the problem is the repository's contents.
     """
     try:
         repos = await _supervisor(hass, "GET", "/store/repositories")
-        repo_list = ((repos.get("body") or {}).get("data") or [])
+        repo_list = _data(repos)
         if isinstance(repo_list, dict):
             repo_list = repo_list.get("repositories") or []
+        if not isinstance(repo_list, list):
+            repo_list = []
         sources = [str(r.get("source") or r.get("slug") or "?") for r in repo_list
                    if isinstance(r, dict)]
     except Exception:  # noqa: BLE001
         sources = ["<could not list repositories>"]
 
-    slugs = [str(a.get("slug", "")) for a in await _list_addons(hass)]
+    slugs = [str(a.get("slug", "")) for a in await _store_apps(hass)]
     ours = "yes" if any("dartec" in x.lower() for x in sources) else "NO"
     return (f"repositories known to the Supervisor: {sources or 'none'}; "
             f"Dartec repo present: {ours}; "
-            f"add-on slugs available: {slugs or 'none'}")
+            f"store offers {len(slugs)} add-on(s)")
 
 
 async def link_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
@@ -129,15 +143,21 @@ async def link_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     addon = await _find_addon(hass)
     if addon is None:
         return {"ok": True, "supported": True, "installed": False,
-                "detail": "Dartec Link is not installed"}
+                "detail": "Dartec Link is not available in the store here"}
+    if not addon.get("installed"):
+        return {"ok": True, "supported": True, "installed": False,
+                "slug": addon.get("slug"),
+                "detail": "Dartec Link is in the store but not installed"}
+
     info = await _supervisor(hass, "GET", f"/addons/{addon['slug']}/info")
-    options = ((info.get("body") or {}).get("data") or {}).get("options") or {}
+    info_data = _data(info)
+    options = info_data.get("options") or {}
     return {"ok": True, "supported": True, "installed": True,
-            "slug": addon["slug"], "state": addon.get("state"),
-            "version": addon.get("version"),
+            "slug": addon["slug"], "state": info_data.get("state"),
+            "version": info_data.get("version"),
             "node_name": options.get("hostname") or "",
             "login_server": options.get("login_server") or "",
-            "detail": f"Dartec Link {addon.get('state')}"}
+            "detail": f"Dartec Link {info_data.get('state')}"}
 
 
 async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
@@ -165,40 +185,33 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         text = str(raw or "")
 
         # The Supervisor names its failures. Match on error_key, not on the
-        # status code and not on the prose.
-        #
-        # Both of my previous attempts at this were wrong in the same way.
-        # First every 400 was assumed to mean "already added", which swallowed
-        # genuine rejections. Then the prose was searched for "exist" -- and
-        # the actual message is "already in the store", which contains no such
-        # word, so a repository that was present and fine got reported as a
-        # hard failure. The status was not 400 either. error_key is the one
-        # part of that response designed to be matched on.
+        # status code and not on the prose -- "already in the store" is a
+        # success for our purposes and contains none of the words a guess
+        # would look for.
         already_added = (body.get("error_key") == "store_repository_already_added_error"
                          or "already in the store" in text.lower())
-
         if status != 200 and not already_added:
             return _fail(f"the Supervisor rejected the add-on repository: "
                          f"{body.get('message') or text}")
 
         await _supervisor(hass, "POST", "/store/reload", timeout=180)
-        # The clone and re-read finish in the background, so poll rather than
-        # asking once. Roughly a minute in total, which is generous for a
-        # small repository on a slow line and still bounded.
         addon = await _find_addon(hass, tries=12, delay=5.0)
         if addon is None:
             detail = await _store_diagnostics(hass)
-            return _fail(f"Dartec Link did not appear after adding its "
-                         f"repository. {detail}")
+            return _fail(f"Dartec Link did not appear in the store after adding "
+                         f"its repository. {detail}")
 
     slug = addon["slug"]
-    if not addon.get("version"):        # not installed yet
-        # No image is published, so the Supervisor BUILDS this on the home's
-        # own hardware. On a Raspberry Pi that is minutes, not seconds, which
-        # is why the timeout here is generous rather than optimistic.
-        install = await _supervisor(hass, "POST", f"/store/addons/{slug}/install", timeout=900)
+    if not addon.get("installed"):
+        # An image is published for every supported architecture, so this is a
+        # pull rather than a build. It was a build once, on the home's own
+        # hardware, which is why the timeout is still generous.
+        install = await _supervisor(hass, "POST", f"/store/addons/{slug}/install",
+                                    timeout=900)
         if install.get("status") != 200:
-            return _fail(f"add-on install failed: {install.get('body')}")
+            detail = (install.get("body") or {})
+            return _fail(f"add-on install failed: "
+                         f"{detail.get('message') if isinstance(detail, dict) else detail}")
 
     options: dict[str, Any] = {"login_server": login_server, "auth_key": auth_key}
     if node_name:
@@ -208,7 +221,8 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if configured.get("status") != 200:
         return _fail(f"add-on configuration failed: {configured.get('body')}")
 
-    action = "restart" if addon.get("state") == "started" else "start"
+    info = _data(await _supervisor(hass, "GET", f"/addons/{slug}/info"))
+    action = "restart" if info.get("state") == "started" else "start"
     started = await _supervisor(hass, "POST", f"/addons/{slug}/{action}", timeout=300)
     if started.get("status") != 200:
         return _fail(f"add-on {action} failed: {started.get('body')}")
@@ -225,9 +239,10 @@ async def link_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     or unreachable can still be cut off.
     """
     addon = await _find_addon(hass)
-    if addon is None:
+    if addon is None or not addon.get("installed"):
         return _fail("Dartec Link is not installed on this home")
-    stopped = await _supervisor(hass, "POST", f"/addons/{addon['slug']}/stop", timeout=120)
+    stopped = await _supervisor(hass, "POST", f"/addons/{addon['slug']}/stop",
+                                timeout=120)
     if stopped.get("status") != 200:
         return _fail(f"stop failed: {stopped.get('body')}")
     return {"ok": True, "detail": "Dartec Link stopped; this home has left the mesh"}
