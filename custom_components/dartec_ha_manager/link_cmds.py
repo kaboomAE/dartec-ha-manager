@@ -203,13 +203,28 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
 
     slug = addon["slug"]
 
-    # An add-on already installed here keeps whatever version it first got,
-    # forever, unless something asks for an update. That means a fix published
-    # to the add-on can never reach a home that already has the broken one --
-    # which is exactly the position this code was in when the schema bug
-    # landed. Not fatal if it fails: an older but working add-on beats
-    # refusing to proceed.
+    # Refresh the store before asking whether an update exists.
+    #
+    # `update_available` is computed against the Supervisor's LOCAL git clone
+    # of the repository, and that clone is only pulled when the store is
+    # reloaded. The reload above happens only when the add-on was missing --
+    # so on a home that already has it installed, nothing ever pulled, the
+    # Supervisor went on believing the newest version was the one it already
+    # had, and a published fix could never arrive. That is precisely what
+    # happened with 0.2.3.
+    #
+    # Cheap, and this is a provisioning path rather than a hot one.
+    await _supervisor(hass, "POST", "/store/reload", timeout=180)
+    refreshed = await _find_addon(hass, tries=6, delay=3.0)
+    if refreshed is not None:
+        addon = refreshed
+
+    # An installed add-on keeps whatever version it first got, forever, unless
+    # something asks for an update. Not fatal if it fails: an older but working
+    # add-on beats refusing to proceed.
     if addon.get("installed") and addon.get("update_available"):
+        _LOGGER.info("Dartec Link %s -> %s", addon.get("version"),
+                     addon.get("version_latest"))
         updated = await _supervisor(hass, "POST", f"/store/addons/{slug}/update",
                                     timeout=900)
         if updated.get("status") != 200:
@@ -290,8 +305,11 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         return _fail(f"Dartec Link did not stay running (state: {state}). "
                      f"Add-on log: {tail}")
 
+    running = _data(await _supervisor(hass, "GET", f"/addons/{slug}/info"))
     return {"ok": True, "node_name": node_name,
-            "detail": f"Dartec Link configured for {login_server} and running"}
+            "addon_version": running.get("version"),
+            "detail": f"Dartec Link {running.get('version')} running, "
+                      f"joined {login_server}"}
 
 
 async def link_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
