@@ -258,8 +258,40 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if started.get("status") != 200:
         return _fail(f"add-on {action} failed: {started.get('body')}")
 
+    # A 200 from start means the Supervisor ACCEPTED the request, not that the
+    # add-on is running. One that starts and immediately exits returns 200 all
+    # the same -- which is how a crash-looping add-on was reported to the
+    # manager as a successful join, leaving the home showing "on the mesh" and
+    # "never joined" at once.
+    #
+    # So confirm it is actually up, and if it is not, hand back the add-on's
+    # own log. That log said `curl: command not found` in plain words while the
+    # manager was reporting success.
+    for attempt in range(10):
+        await asyncio.sleep(3)
+        state = _data(await _supervisor(hass, "GET", f"/addons/{slug}/info")).get("state")
+        if state == "started":
+            break
+    else:
+        state = _data(await _supervisor(hass, "GET", f"/addons/{slug}/info")).get("state")
+
+    if state != "started":
+        tail = ""
+        try:
+            logs = await _supervisor(hass, "GET", f"/addons/{slug}/logs", timeout=30)
+            raw = logs.get("body")
+            text = raw.get("raw") if isinstance(raw, dict) else str(raw or "")
+            # The last few lines carry the reason; the rest is s6 boilerplate.
+            tail = " | ".join(
+                line.strip() for line in str(text).strip().splitlines()[-6:]
+                if line.strip())
+        except Exception:  # noqa: BLE001
+            tail = "(could not read the add-on log)"
+        return _fail(f"Dartec Link did not stay running (state: {state}). "
+                     f"Add-on log: {tail}")
+
     return {"ok": True, "node_name": node_name,
-            "detail": f"Dartec Link configured for {login_server} and {action}ed"}
+            "detail": f"Dartec Link configured for {login_server} and running"}
 
 
 async def link_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
