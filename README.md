@@ -6,6 +6,23 @@ The Home Assistant integration that links an HA instance to [Dartec HA Manager](
 > map, the release process (HACS installs *Releases*, not tags), CI, and the
 > gotchas that cost real debugging time.
 
+## Code quality
+
+[![Validate](https://github.com/kaboomAE/dartec-ha-manager/actions/workflows/validate.yml/badge.svg)](https://github.com/kaboomAE/dartec-ha-manager/actions/workflows/validate.yml)
+[![License](https://img.shields.io/github/license/kaboomAE/dartec-ha-manager?color=1a6b6b)](LICENSE)
+![Commit activity](https://img.shields.io/github/commit-activity/y/kaboomAE/dartec-ha-manager?color=8f8368)
+![Last commit](https://img.shields.io/github/last-commit/kaboomAE/dartec-ha-manager?color=8f8368)
+![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FkaboomAE%2Fdartec-ha-manager%2Fmain%2Fcustom_components%2Fdartec_ha_manager%2Fmanifest.json&query=%24.version&label=version&color=1a6b6b)
+[![HACS](https://img.shields.io/badge/HACS-custom-41BDF5)](https://hacs.xyz)
+
+The version badge reads `manifest.json` on `main`, so it shows what HACS would
+install rather than a number somebody remembered to update in two places.
+
+| | |
+|---|---|
+| Tests | 5 files, `python -m pytest tests` |
+| CI | hassfest and HACS validation on every push |
+
 ## What it does
 
 - Opens a single **outbound** encrypted WebSocket to the Dartec cloud — no port forwarding, no VPN, no exposed services.
