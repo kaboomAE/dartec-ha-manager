@@ -160,15 +160,26 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         added = await _supervisor(hass, "POST", "/store/repositories",
                                   {"repository": DARTEC_ADDON_REPO})
         status = added.get("status")
-        body = str(added.get("body") or "")
-        if status not in (200, 400):
-            return _fail(f"could not add the Dartec add-on repository: {body}")
-        if status == 400 and "exist" not in body.lower():
-            # 400 is NOT automatically "already added". It is also how the
-            # Supervisor reports a repository it could not clone or parse, and
-            # treating every 400 as success meant that failure surfaced later
-            # as a confusing "add-on not found".
-            return _fail(f"the Supervisor rejected the add-on repository: {body}")
+        raw = added.get("body")
+        body = raw if isinstance(raw, dict) else {}
+        text = str(raw or "")
+
+        # The Supervisor names its failures. Match on error_key, not on the
+        # status code and not on the prose.
+        #
+        # Both of my previous attempts at this were wrong in the same way.
+        # First every 400 was assumed to mean "already added", which swallowed
+        # genuine rejections. Then the prose was searched for "exist" -- and
+        # the actual message is "already in the store", which contains no such
+        # word, so a repository that was present and fine got reported as a
+        # hard failure. The status was not 400 either. error_key is the one
+        # part of that response designed to be matched on.
+        already_added = (body.get("error_key") == "store_repository_already_added_error"
+                         or "already in the store" in text.lower())
+
+        if status != 200 and not already_added:
+            return _fail(f"the Supervisor rejected the add-on repository: "
+                         f"{body.get('message') or text}")
 
         await _supervisor(hass, "POST", "/store/reload", timeout=180)
         # The clone and re-read finish in the background, so poll rather than
