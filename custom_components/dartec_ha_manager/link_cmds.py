@@ -25,6 +25,7 @@ does not rely on it to answer "is this home reachable".
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
@@ -67,13 +68,57 @@ async def _supervisor(hass: HomeAssistant, method: str, path: str,
         return {"status": resp.status, "body": body}
 
 
-async def _find_addon(hass: HomeAssistant) -> dict | None:
+async def _list_addons(hass: HomeAssistant) -> list[dict]:
     listing = await _supervisor(hass, "GET", "/addons")
     if listing.get("_no_supervisor"):
-        return None
-    addons = ((listing.get("body") or {}).get("data") or {}).get("addons") or []
-    return next((a for a in addons
-                 if str(a.get("slug", "")).endswith(DARTEC_LINK_SLUG_SUFFIX)), None)
+        return []
+    return ((listing.get("body") or {}).get("data") or {}).get("addons") or []
+
+
+async def _find_addon(hass: HomeAssistant, *, tries: int = 1,
+                      delay: float = 4.0) -> dict | None:
+    """The Dartec Link add-on, or None.
+
+    `tries` exists because adding a repository is not synchronous with the
+    add-on appearing in it: the Supervisor clones and re-reads the store in
+    the background, and looking immediately afterwards finds nothing. The
+    first version of this asked once and reported "not found after adding its
+    repository", which is indistinguishable from a genuinely broken
+    repository and sent us hunting a config bug that was not there.
+    """
+    for attempt in range(max(1, tries)):
+        for addon in await _list_addons(hass):
+            if str(addon.get("slug", "")).endswith(DARTEC_LINK_SLUG_SUFFIX):
+                return addon
+        if attempt + 1 < tries:
+            await asyncio.sleep(delay)
+    return None
+
+
+async def _store_diagnostics(hass: HomeAssistant) -> str:
+    """What the Supervisor actually has, for when the add-on is missing.
+
+    A failure that says only "not found" forces the next person to guess.
+    This turns it into evidence: which repositories are registered, and which
+    add-on slugs exist. If our repository is absent the problem is the add;
+    if it is present but has no add-ons the problem is the repository's
+    contents.
+    """
+    try:
+        repos = await _supervisor(hass, "GET", "/store/repositories")
+        repo_list = ((repos.get("body") or {}).get("data") or [])
+        if isinstance(repo_list, dict):
+            repo_list = repo_list.get("repositories") or []
+        sources = [str(r.get("source") or r.get("slug") or "?") for r in repo_list
+                   if isinstance(r, dict)]
+    except Exception:  # noqa: BLE001
+        sources = ["<could not list repositories>"]
+
+    slugs = [str(a.get("slug", "")) for a in await _list_addons(hass)]
+    ours = "yes" if any("dartec" in x.lower() for x in sources) else "NO"
+    return (f"repositories known to the Supervisor: {sources or 'none'}; "
+            f"Dartec repo present: {ours}; "
+            f"add-on slugs available: {slugs or 'none'}")
 
 
 async def link_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
@@ -114,12 +159,26 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if addon is None:
         added = await _supervisor(hass, "POST", "/store/repositories",
                                   {"repository": DARTEC_ADDON_REPO})
-        if added.get("status") not in (200, 400):   # 400 = already added
-            return _fail(f"could not add the Dartec add-on repository: {added.get('body')}")
-        await _supervisor(hass, "POST", "/store/reload", timeout=120)
-        addon = await _find_addon(hass)
+        status = added.get("status")
+        body = str(added.get("body") or "")
+        if status not in (200, 400):
+            return _fail(f"could not add the Dartec add-on repository: {body}")
+        if status == 400 and "exist" not in body.lower():
+            # 400 is NOT automatically "already added". It is also how the
+            # Supervisor reports a repository it could not clone or parse, and
+            # treating every 400 as success meant that failure surfaced later
+            # as a confusing "add-on not found".
+            return _fail(f"the Supervisor rejected the add-on repository: {body}")
+
+        await _supervisor(hass, "POST", "/store/reload", timeout=180)
+        # The clone and re-read finish in the background, so poll rather than
+        # asking once. Roughly a minute in total, which is generous for a
+        # small repository on a slow line and still bounded.
+        addon = await _find_addon(hass, tries=12, delay=5.0)
         if addon is None:
-            return _fail("Dartec Link not found after adding its repository")
+            detail = await _store_diagnostics(hass)
+            return _fail(f"Dartec Link did not appear after adding its "
+                         f"repository. {detail}")
 
     slug = addon["slug"]
     if not addon.get("version"):        # not installed yet
