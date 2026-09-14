@@ -60,6 +60,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
     from .hacs_cmds import HANDLERS as HACS_HANDLERS
     from .home_cmds import HANDLERS as HOME_HANDLERS
     from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
+    from .link_cmds import HANDLERS as LINK_HANDLERS
     from .registry_cmds import HANDLERS as REGISTRY_HANDLERS
     from .tunnel_cmds import HANDLERS as TUNNEL_HANDLERS
     from .user_cmds import HANDLERS as USER_HANDLERS
@@ -104,6 +105,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             result = await USER_HANDLERS[action](hass, cmd)
         elif action in TUNNEL_HANDLERS:
             result = await TUNNEL_HANDLERS[action](hass, cmd)
+        elif action in LINK_HANDLERS:
+            result = await LINK_HANDLERS[action](hass, cmd)
         elif action in BACKUP_HANDLERS:
             result = await BACKUP_HANDLERS[action](hass, cmd)
         else:

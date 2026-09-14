@@ -111,6 +111,7 @@ SENSITIVE_ACTIONS = frozenset({
     "automation_create",
     # Reachability, data leaving the house, and data destroyed in it.
     "tunnel_setup", "tunnel_stop",
+    "link_setup", "link_stop",
     "backup_upload", "backup_delete",
     # Add-ons are services in their own right.
     "addon_restart", "addon_start", "addon_stop",
