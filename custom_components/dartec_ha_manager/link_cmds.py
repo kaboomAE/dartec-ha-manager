@@ -202,6 +202,20 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
                          f"its repository. {detail}")
 
     slug = addon["slug"]
+
+    # An add-on already installed here keeps whatever version it first got,
+    # forever, unless something asks for an update. That means a fix published
+    # to the add-on can never reach a home that already has the broken one --
+    # which is exactly the position this code was in when the schema bug
+    # landed. Not fatal if it fails: an older but working add-on beats
+    # refusing to proceed.
+    if addon.get("installed") and addon.get("update_available"):
+        updated = await _supervisor(hass, "POST", f"/store/addons/{slug}/update",
+                                    timeout=900)
+        if updated.get("status") != 200:
+            _LOGGER.warning("Dartec Link update failed, continuing on the "
+                            "installed version: %s", updated.get("body"))
+
     if not addon.get("installed"):
         # An image is published for every supported architecture, so this is a
         # pull rather than a build. It was a build once, on the home's own
@@ -213,9 +227,26 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             return _fail(f"add-on install failed: "
                          f"{detail.get('message') if isinstance(detail, dict) else detail}")
 
-    options: dict[str, Any] = {"login_server": login_server, "auth_key": auth_key}
-    if node_name:
-        options["hostname"] = node_name
+    # EVERY key the add-on's schema declares, not just the ones being changed.
+    # The Supervisor replaces the whole options object rather than merging, so
+    # anything omitted is "missing" -- and a list option is mandatory unless
+    # its inner type is marked optional, which this one was not until add-on
+    # 0.2.1. Sending the full set works against both versions, which matters
+    # because a home already running the older add-on cannot be fixed by
+    # changing the newer one.
+    options: dict[str, Any] = {
+        "login_server": login_server,
+        "auth_key": auth_key,
+        "hostname": node_name or "",
+        # Home Assistant resolves names for the whole house; handing DNS to the
+        # mesh breaks local integrations in ways that look nothing like a DNS
+        # change. Off unless someone deliberately turns it on.
+        "accept_dns": False,
+        # No subnet routing: this node is a leaf. Advertising the house LAN
+        # would put every device behind it on the mesh, which is a much larger
+        # promise than "Dartec can reach Home Assistant".
+        "advertise_routes": [],
+    }
     configured = await _supervisor(hass, "POST", f"/addons/{slug}/options",
                                    {"options": options})
     if configured.get("status") != 200:
