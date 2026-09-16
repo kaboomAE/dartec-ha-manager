@@ -104,6 +104,9 @@ SENSITIVE_ACTIONS = frozenset({
     # `hacs_install` adds a third-party one, so both are remote code
     # deployment however routine they feel.
     "agent_update", "hacs_install", "ha_restart",
+    # Setting an integration up runs its code and creates configuration in
+    # the house - the step that actually makes installed code do anything.
+    "integration_setup",
     # `automation_create` is here specifically because an automation is a
     # stored service call: without this gate the cloud could write an
     # automation whose action is `shell_command.*` and let a trigger run it,

@@ -38,6 +38,34 @@ async def _repo_entry(hass: HomeAssistant, repo: str) -> dict | None:
 
 
 async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """Install a HACS repository, and report what a restart would be for.
+
+    The manager used to restart a home after every integration install,
+    because HACS says "restart Home Assistant to load it". Tested live, that is
+    not true of a *new* integration: a HACS-managed install refreshes HA's
+    integration cache, and the integration sets up and registers its services
+    with no restart. A restart is needed only when code that is **already
+    imported** has changed on disk, because Python keeps the old module in
+    memory until the process exits.
+
+    Whether the domain was loaded has to be read *before* the download — after
+    it, the answer describes the new state, not the one that decides. So this
+    reports the facts and the manager decides: `was_loaded` (the domain was set
+    up before we touched it) and `previous_version`.
+    """
+    domain = (cmd.get("domain") or "").strip()
+    was_loaded = bool(domain) and domain in hass.config.components
+    previous = None
+    if hass.data.get("hacs") is not None and "/" in (cmd.get("repo") or ""):
+        before = await _repo_entry(hass, cmd["repo"].strip())
+        previous = (before or {}).get("installed_version")
+
+    result = await _hacs_install(hass, cmd)
+    return {**result, "domain": domain or None, "was_loaded": was_loaded,
+            "previous_version": previous}
+
+
+async def _hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     """Add (if needed) and download a HACS repository. Idempotent: an already
     installed repo at the requested version is reported as such, not re-fetched."""
     repo = (cmd.get("repo") or "").strip()
@@ -131,8 +159,10 @@ async def hacs_install(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     entry = await _repo_entry(hass, repo) or entry
     version = entry.get("installed_version") or available
     return {"ok": True, "changed": True, "installed_version": version,
-            "detail": f"installed {repo} {version}"
-                      + (" — restart Home Assistant to load it" if category == "integration" else "")}
+            # No blanket "restart to load it": for a new integration that is
+            # not true, and repeating HACS's conservative advice here is how
+            # the manager came to restart homes for nothing.
+            "detail": f"installed {repo} {version}"}
 
 
 async def hacs_list(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:

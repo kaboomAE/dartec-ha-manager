@@ -64,6 +64,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
     from .hacs_cmds import HANDLERS as HACS_HANDLERS
     from .helper_cmds import HANDLERS as HELPER_HANDLERS
     from .home_cmds import HANDLERS as HOME_HANDLERS
+    from .integration_cmds import HANDLERS as INTEGRATION_HANDLERS
     from .media_cmds import HANDLERS as MEDIA_HANDLERS
     from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
     from .link_cmds import HANDLERS as LINK_HANDLERS
@@ -117,6 +118,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             result = await BLUEPRINT_HANDLERS[action](hass, cmd)
         elif action in HELPER_HANDLERS:
             result = await HELPER_HANDLERS[action](hass, cmd)
+        elif action in INTEGRATION_HANDLERS:
+            result = await INTEGRATION_HANDLERS[action](hass, cmd)
         elif action in MEDIA_HANDLERS:
             result = await MEDIA_HANDLERS[action](hass, cmd)
         elif action in LOVELACE_HANDLERS:
