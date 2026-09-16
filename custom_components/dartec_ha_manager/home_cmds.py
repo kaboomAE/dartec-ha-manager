@@ -9,16 +9,22 @@ automation_create — write an automation through HA's own storage config API
 automation editor exactly as if created there, and HA reloads automations
 itself. The manager's UI requires a human to review AI-generated automations
 before this command is ever sent.
+
+It takes two shapes: an automation written out in full, and a *blueprint
+instance* — `{alias, use_blueprint: {path, input}}` — whose behaviour comes
+from a blueprint staged by `blueprint_cmds.py`. HA substitutes the inputs and
+validates the result against the automation schema before storing it, so a
+bad input is refused here rather than becoming an automation that silently
+never fires.
 """
 from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
-
-from .ws_bridge import call_own_rest, call_own_ws
+if TYPE_CHECKING:                       # keeps the validation below importable
+    from homeassistant.core import HomeAssistant   # without HA, so CI can test it
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,11 +32,19 @@ AUTOMATION_KEYS = {"alias", "description", "triggers", "conditions", "actions",
                    "trigger", "condition", "action", "mode", "max", "max_exceeded",
                    "variables", "trace", "initial_state"}
 
+# A blueprint instance is a different shape entirely: it has no triggers or
+# actions of its own, because those come from the blueprint. Its own key set
+# rather than a widened AUTOMATION_KEYS, so a config that tries to be both is
+# refused here with a clear reason instead of by HA with a schema error.
+BLUEPRINT_AUTOMATION_KEYS = {"alias", "description", "use_blueprint"}
+
 
 async def theme_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     name = (cmd.get("theme") or "").strip()
     if not name:
         return {"ok": False, "detail": "theme name required"}
+
+    from .ws_bridge import call_own_ws
 
     themes_msg = await call_own_ws(hass, {"type": "frontend/get_themes"})
     available = (themes_msg.get("result") or {}).get("themes") or {}
@@ -50,17 +64,50 @@ async def theme_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
                                   + (f" ({cmd['mode']} mode)" if data.get("mode") else "")}
 
 
-async def automation_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
-    config = cmd.get("config")
-    if not isinstance(config, dict):
-        return {"ok": False, "detail": "config (object) required"}
-    if not (config.get("alias") and (config.get("triggers") or config.get("trigger"))
-            and (config.get("actions") or config.get("action"))):
-        return {"ok": False, "detail": "automation needs alias, triggers and actions"}
+def _validate_automation(config: dict[str, Any]) -> str | None:
+    """Refusal reason for an automation config, or None if it may be written.
 
+    Two accepted shapes. A **written** automation carries its own triggers and
+    actions, and is model output — the reason `automation_create` sits in
+    `SENSITIVE_ACTIONS` at all. A **blueprint instance** carries neither: its
+    behaviour comes from a YAML file already staged on this home, so the
+    executable part was written and reviewed by us rather than generated per
+    house. Both still need the maintenance window; only the review burden
+    differs.
+    """
+    if not isinstance(config, dict):
+        return "config (object) required"
+    if not config.get("alias"):
+        return "automation needs an alias"
+
+    if "use_blueprint" in config:
+        used = config["use_blueprint"]
+        if not isinstance(used, dict) or not str(used.get("path") or "").strip():
+            return "use_blueprint needs a path"
+        if "input" in used and not isinstance(used["input"], dict):
+            return "use_blueprint input must be an object"
+        unknown = set(config) - BLUEPRINT_AUTOMATION_KEYS - {"id"}
+        if unknown:
+            return (f"a blueprint automation cannot also set {sorted(unknown)} — "
+                    "triggers, actions and mode come from the blueprint")
+        return None
+
+    if not ((config.get("triggers") or config.get("trigger"))
+            and (config.get("actions") or config.get("action"))):
+        return "automation needs alias, triggers and actions"
     unknown = set(config) - AUTOMATION_KEYS - {"id"}
     if unknown:
-        return {"ok": False, "detail": f"unknown automation keys: {sorted(unknown)}"}
+        return f"unknown automation keys: {sorted(unknown)}"
+    return None
+
+
+async def automation_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    config = cmd.get("config")
+    refusal = _validate_automation(config)
+    if refusal:
+        return {"ok": False, "detail": refusal}
+
+    from .ws_bridge import call_own_rest
 
     automation_id = str(config.pop("id", "") or "").strip() or f"dartec_{uuid.uuid4().hex[:12]}"
     result = await call_own_rest(hass, "POST",
@@ -69,8 +116,10 @@ async def automation_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         return {"ok": False,
                 "detail": f"HA rejected the automation (HTTP {result.get('status')}): "
                           f"{result.get('body')}"}
-    return {"ok": True, "automation_id": automation_id,
-            "detail": f"created automation '{config.get('alias')}' ({automation_id})"}
+    used = (config.get("use_blueprint") or {}).get("path")
+    return {"ok": True, "automation_id": automation_id, "blueprint": used,
+            "detail": f"created automation '{config.get('alias')}' ({automation_id})"
+                      + (f" from blueprint {used}" if used else "")}
 
 
 async def branding_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
@@ -125,6 +174,8 @@ async def agent_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
 async def ha_restart(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     """Restart Home Assistant Core. Config is checked first — restarting into
     a broken configuration is the one way this leaves a customer offline."""
+    from .ws_bridge import call_own_rest
+
     check = await call_own_rest(hass, "POST", "/api/config/core/check_config", {})
     body = check.get("body") or {}
     if isinstance(body, dict) and body.get("result") == "invalid":
