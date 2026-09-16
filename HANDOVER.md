@@ -56,7 +56,8 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
 | `tunnel_cmds.py` | Cloudflare tunnel setup on the home |
 | `branding.py` | Installer branding in the sidebar and tab title, plus its config endpoint |
-| `version.py` | Version comparison. No HA imports, so CI can test it directly |
+| `version.py` | Version comparison, and the agent's own running version (from HA's loader). No module-level HA imports, so CI can test it directly |
+| `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
 | `www/` | Brand SVGs served as static assets |
 
 `tests/` holds the unit tests that need no Home Assistant — currently
@@ -191,7 +192,13 @@ check.
 - Mainline ARM64 `/proc/cpuinfo` has no `model name`; the CPU shows as null on
   an HA Green unless implementer/part codes are decoded (0.3.2).
 - **Never block the event loop.** File and process reads go through an executor
-  and are cached (0.3.1).
+  and are cached (0.3.1). The agent's own version comes from
+  `homeassistant.loader`, not a read of `manifest.json` — that read ran every
+  snapshot and HA 2026.9 logs it as a blocking call.
+- **Never use `device_registry.devices` as a mapping** (`.values()`, `.get()`,
+  `[id]`, `id in`). HA 2026.9 logs it and 2027.9 breaks it. Enumerate with
+  `registry_access.all_devices`, look one up with `registry.async_get(id)`;
+  `tests/test_registry_access.py` sweeps the package for the old form.
 
 **Dashboards**
 - The live `DashboardsCollection` is a setup-local variable and cannot be reached

@@ -180,6 +180,7 @@ async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     not changing.
     """
     from .collector import device_row, entity_row, registry_context
+    from .registry_access import all_devices
 
     kind = str(cmd.get("kind") or "entities")
     if kind not in ("entities", "devices"):
@@ -189,7 +190,7 @@ async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if kind == "entities":
         rows = [entity_row(reg, ctx, hass) for reg in ctx["entities"].entities.values()]
     else:
-        rows = [device_row(device, ctx) for device in ctx["devices"].devices.values()]
+        rows = [device_row(device, ctx) for device in all_devices(ctx["devices"])]
 
     return paginate_rows(
         rows, kind,

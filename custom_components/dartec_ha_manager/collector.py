@@ -16,7 +16,10 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import signal_health
+from .const import DOMAIN
 from .hardware import async_collect_hardware
+from .registry_access import all_devices
+from .version import async_agent_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +29,9 @@ SUPERVISOR_URL = "http://supervisor"
 async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot: dict[str, Any] = {}
 
-    snapshot["core"] = _collect_core(hass)
+    # Which homes run an outdated agent. From the loader, not manifest.json:
+    # reading the file here was blocking I/O in the event loop every cycle.
+    snapshot["core"] = _collect_core(hass, await async_agent_version(hass, DOMAIN))
     snapshot["integrations"] = _collect_integrations(hass)
     snapshot["automations"] = _collect_automations(hass)
     snapshot["dashboards"] = _collect_dashboards(hass)
@@ -73,27 +78,13 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     return snapshot
 
 
-def _agent_version() -> str | None:
-    """Our own version, read from the manifest — lets the fleet view show
-    which homes are running an outdated agent."""
-    try:
-        import json
-        from pathlib import Path
-
-        manifest = json.loads((Path(__file__).parent / "manifest.json")
-                              .read_text(encoding="utf-8"))
-        return manifest.get("version")
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _collect_core(hass: HomeAssistant) -> dict:
+def _collect_core(hass: HomeAssistant, agent_version: str | None) -> dict:
     try:
         from homeassistant.const import __version__ as ha_version
 
         return {
             "version": ha_version,
-            "agent_version": _agent_version(),
+            "agent_version": agent_version,
             "location_name": hass.config.location_name,
             "installation_type": "Home Assistant OS" if os.environ.get("SUPERVISOR_TOKEN")
                                  else "Container/Core",
@@ -168,7 +159,7 @@ def registry_context(hass: HomeAssistant) -> dict:
     return {
         "area_names": {area.id: area.name for area in ar.async_get(hass).async_list_areas()},
         "entities_per_device": entities_per_device,
-        "device_area_id": {device.id: device.area_id for device in devices.devices.values()},
+        "device_area_id": {device.id: device.area_id for device in all_devices(devices)},
         "devices": devices,
         "entities": entities,
     }
@@ -278,7 +269,7 @@ def _collect_registries(hass: HomeAssistant) -> dict:
 
         ctx = registry_context(hass)
 
-        device_list = list(ctx["devices"].devices.values())
+        device_list = all_devices(ctx["devices"])
         out["device_count"] = len(device_list)
         out["devices"] = [device_row(device, ctx) for device in device_list[:MAX_DEVICES]]
 

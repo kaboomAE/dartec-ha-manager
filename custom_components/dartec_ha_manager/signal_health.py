@@ -107,7 +107,8 @@ def collect_signal(hass) -> list[dict[str, Any]]:
                 # reading, and recording it as one would invent an outage.
                 continue
 
-            device = devices.devices.get(reg.device_id) if reg.device_id else None
+            # async_get, not devices.get: the mapping form is deprecated in 2026.9.
+            device = devices.async_get(reg.device_id) if reg.device_id else None
             area_id = reg.area_id or (device.area_id if device else None)
             readings.append({
                 "entity_id": reg.entity_id,
