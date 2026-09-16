@@ -1,5 +1,9 @@
-"""Config flow: the installer pastes the server URL + pairing token generated
-in the Dartec admin panel, we validate it against the cloud, done."""
+"""Config flow: the installer pastes the server URL and either an enrolment
+code or a pairing token from the Dartec admin panel.
+
+An enrolment code is traded at the manager for this home's pairing token,
+which is stored exactly as a pasted token would be — so nothing after this
+flow knows or cares which one was typed. See enrolment.py."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -12,6 +16,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import enrolment
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 from .maintenance import (COMMISSIONING_MINUTES, OPT_COMMISSIONING_UNTIL,
                           OPT_STANDING_CONSENT)
@@ -47,43 +52,87 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             server = user_input[CONF_SERVER_URL].rstrip("/")
-            token = user_input[CONF_PAIRING_TOKEN].strip()
+            typed = user_input[CONF_PAIRING_TOKEN].strip()
             if _insecure(server):
                 return self.async_show_form(
                     step_id="user", data_schema=STEP_USER_SCHEMA,
                     errors={"base": "insecure_url"})
+            code = enrolment.normalize(typed)
             try:
                 session = async_get_clientsession(self.hass)
-                async with session.post(f"{server}/api/agent/validate",
-                                        json={"token": token}, timeout=15) as resp:
-                    if resp.status == 401:
-                        errors["base"] = "invalid_token"
-                    elif resp.status != 200:
-                        errors["base"] = "cannot_connect"
-                    else:
-                        info = await resp.json()
-                        await self.async_set_unique_id(info["instance_id"])
-                        self._abort_if_unique_id_configured()
-                        # The commissioning allowance, written once, here.
-                        # Reaching this line means someone held a valid
-                        # pairing token and was standing in this house typing
-                        # it in — which is the same evidence the maintenance
-                        # switch collects, gathered a minute earlier. Asking
-                        # them to then walk to a tablet mid-install was the
-                        # thing stopping homes from being set up. It is a
-                        # timestamp, so it expires on its own, and nothing
-                        # remote can extend it.
-                        commissioned = (datetime.now(timezone.utc)
-                                        + timedelta(minutes=COMMISSIONING_MINUTES))
-                        return self.async_create_entry(
-                            title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
-                            data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
-                            options={OPT_COMMISSIONING_UNTIL: commissioned.isoformat()},
-                        )
+                if code:
+                    info, error = await self._redeem(session, server, code)
+                    token = info["pairing_token"] if info else None
+                else:
+                    info, error = await self._validate(session, server, typed)
+                    token = typed
+                if error:
+                    errors["base"] = error
+                else:
+                    existing = await self.async_set_unique_id(info["instance_id"])
+                    if existing is not None:
+                        if not code:
+                            return self.async_abort(reason="already_configured")
+                        # Re-pairing a home that is already set up. Redeeming
+                        # the code has just replaced this home's pairing token
+                        # at the manager, so the entry must take the new one
+                        # or it would never reconnect.
+                        return self.async_update_reload_and_abort(
+                            existing, data={**existing.data, CONF_SERVER_URL: server,
+                                            CONF_PAIRING_TOKEN: token},
+                            reason="repaired")
+                    # The commissioning allowance, written once, here.
+                    # Reaching this line means someone held a valid
+                    # pairing token or enrolment code and was standing in
+                    # this house typing it in — which is the same evidence
+                    # the maintenance switch collects, gathered a minute
+                    # earlier. Asking them to then walk to a tablet
+                    # mid-install was the thing stopping homes from being set
+                    # up. It is a timestamp, so it expires on its own, and
+                    # nothing remote can extend it.
+                    commissioned = (datetime.now(timezone.utc)
+                                    + timedelta(minutes=COMMISSIONING_MINUTES))
+                    return self.async_create_entry(
+                        title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
+                        data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
+                        options={OPT_COMMISSIONING_UNTIL: commissioned.isoformat()},
+                    )
             except (aiohttp.ClientError, TimeoutError):
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors)
+
+    async def _validate(self, session, server: str, token: str):
+        """(info, None) for a pairing token the manager knows, else (None, error)."""
+        async with session.post(f"{server}/api/agent/validate",
+                                json={"token": token}, timeout=15) as resp:
+            if resp.status == 401:
+                return None, "invalid_token"
+            if resp.status != 200:
+                return None, "cannot_connect"
+            return await resp.json(), None
+
+    async def _redeem(self, session, server: str, code: str):
+        """(info including the new pairing_token, None), else (None, error).
+
+        When this Home Assistant is already paired, the home it is paired to
+        goes along as `instance_id`, and the manager refuses a code for any
+        other home without using it up — rather than quietly giving this box a
+        second identity and taking the credential from whichever home the code
+        was really for."""
+        body: dict[str, Any] = {"code": code}
+        paired = [e.unique_id for e in self._async_current_entries(include_ignore=False)
+                  if e.unique_id]
+        if paired:
+            body["instance_id"] = paired[0]
+        async with session.post(f"{server}/api/agent/enrol", json=body, timeout=15) as resp:
+            try:
+                payload = await resp.json(content_type=None)
+            except ValueError:
+                payload = None
+            if resp.status == 200 and isinstance(payload, dict) and payload.get("pairing_token"):
+                return payload, None
+            return None, enrolment.error_key(resp.status, payload)
 
     @staticmethod
     @callback
