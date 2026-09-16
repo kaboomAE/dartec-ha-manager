@@ -30,6 +30,10 @@
         }
       }
     },
+    "complete_commissioning": {
+      "name": "Dartec: commissioning complete",
+      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (at most 30 days); afterwards sensitive operations need 'Allow Dartec support' switched on again."
+    },
     "end_maintenance": {
       "name": "Dartec: end maintenance",
       "description": "Close the maintenance window immediately."

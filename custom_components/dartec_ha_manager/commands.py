@@ -80,9 +80,15 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             return {"ok": True, **maintenance.status(hass)}
         if action == "maintenance_request":
             return maintenance.request_window(hass, str(cmd.get("reason") or ""))
+        # Ending commissioning only ever takes permission away, so the manager
+        # may send it without consent. Nothing in the command is read: there
+        # is no deadline or duration it could carry that would be honoured,
+        # which is what keeps "close" from becoming "extend".
+        if action == "commissioning_complete":
+            return maintenance.complete_commissioning(hass, "manager")
 
-        # Consent, not merely the switch: an interactive window, a
-        # time-boxed commissioning allowance written at pairing, or a standing
+        # Consent, not merely the switch: an interactive window, the
+        # commissioning period that pairing opened, or a standing
         # opt-in set on this home. All three are decided here; none can be
         # asserted by the caller. See maintenance.consent.
         granted = maintenance.consent(hass)
@@ -104,11 +110,11 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             return _refuse(hass, str(action),
                            f"'{action}' needs consent from this home. Ask the "
                            "homeowner to switch 'Allow Dartec support' on, or "
-                           "request a window from the manager. (During an "
-                           "install, pairing grants a "
-                           f"{maintenance.COMMISSIONING_MINUTES}-minute "
-                           "commissioning period; for a site that wants "
-                           "unattended support, turn it on in this "
+                           "request a window from the manager. (Pairing opens "
+                           "a commissioning period that lasts until the "
+                           "install is marked complete, at most "
+                           f"{maintenance.COMMISSIONING_DAYS} days; for a site "
+                           "that wants unattended support, turn it on in this "
                            "integration's options.)")
 
         if action in _ADDON_ACTIONS:

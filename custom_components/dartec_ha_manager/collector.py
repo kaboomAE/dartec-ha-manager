@@ -50,6 +50,15 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["hacs"] = _collect_hacs(hass)
     snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
+    # Whether this home is still being commissioned, and until when. The
+    # manager warns about homes left in commissioning, and it can only do that
+    # across the fleet if the answer arrives without asking each home.
+    try:
+        from . import maintenance
+
+        snapshot["commissioning"] = maintenance.commissioning(hass)
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("commissioning collect failed: %s", err)
     snapshot.update(_collect_registries(hass))
 
     # Host metrics: psutil reads /proc, which is host-wide even inside the HA

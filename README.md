@@ -34,10 +34,22 @@ install rather than a number somebody remembered to update in two places.
     `hassio.host_shutdown` and `homeassistant.stop` are permanently blocked and
     no permission you grant can unlock them.
   - **Sensitive** — locks, covers, alarm, climate, reboots, backups and account
-    changes need a *maintenance window* that only you can open, from inside
-    Home Assistant, by calling `dartec_ha_manager.allow_maintenance`. It expires
-    on its own and closes on every restart. Support can ask for one; it cannot
-    grant itself one.
+    changes need your consent, given on your own Home Assistant. It can come
+    from three places, and support can ask for it but never grant itself any:
+    - **Commissioning.** Pairing opens it, because whoever paired the home was
+      standing in it with its pairing token. It lasts until the install is
+      marked complete — by calling `dartec_ha_manager.complete_commissioning`,
+      by switching **Allow Dartec support** off, or from Dartec's manager — and
+      never longer than **30 days**. It survives restarts. The manager can end
+      it early; nothing remote can open, extend or restart it.
+    - **The Allow Dartec support switch** (or
+      `dartec_ha_manager.allow_maintenance`) opens a window that ends on its
+      own and on every restart. The switch reads *on* while commissioning is
+      open too, and its `commissioning_ends_at` attribute says until when.
+    - **Unattended support**, an opt-in in this integration's options, off
+      unless you turn it on.
+
+    Once commissioning ends, access is closed until you switch it on again.
   - **Routine** — reversible commissioning and diagnostic calls, which need no
     window.
 - Calls that would target the whole house at once (`entity_id: all`, or no

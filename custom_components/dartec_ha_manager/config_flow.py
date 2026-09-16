@@ -2,7 +2,6 @@
 in the Dartec admin panel, we validate it against the cloud, done."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -13,8 +12,8 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
-from .maintenance import (COMMISSIONING_MINUTES, OPT_COMMISSIONING_UNTIL,
-                          OPT_STANDING_CONSENT)
+from .maintenance import (OPT_COMMISSIONING_UNTIL, OPT_STANDING_CONSENT,
+                          commissioning_deadline)
 
 # A bare "http://" URL is silently downgraded to plaintext ws:// by CloudLink,
 # which would put the pairing token — the key to this whole home — on the wire
@@ -62,18 +61,23 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         info = await resp.json()
                         await self.async_set_unique_id(info["instance_id"])
+                        # Re-pairing a home that is already paired stops here,
+                        # before any commissioning is written, so pairing
+                        # again cannot quietly restart the 30 days. The only
+                        # way to a fresh period is to delete this integration
+                        # on the home and pair it again with a valid token —
+                        # a person on site deliberately starting over.
                         self._abort_if_unique_id_configured()
-                        # The commissioning allowance, written once, here.
-                        # Reaching this line means someone held a valid
-                        # pairing token and was standing in this house typing
-                        # it in — which is the same evidence the maintenance
-                        # switch collects, gathered a minute earlier. Asking
-                        # them to then walk to a tablet mid-install was the
-                        # thing stopping homes from being set up. It is a
-                        # timestamp, so it expires on its own, and nothing
-                        # remote can extend it.
-                        commissioned = (datetime.now(timezone.utc)
-                                        + timedelta(minutes=COMMISSIONING_MINUTES))
+                        # Commissioning, written once, here. Reaching this
+                        # line means someone held a valid pairing token and
+                        # was standing in this house typing it in — which is
+                        # the same evidence the maintenance switch collects,
+                        # gathered a minute earlier. Asking them to then walk
+                        # to a tablet mid-install was the thing stopping homes
+                        # from being set up. It is a deadline, so it ends on
+                        # its own at the cap; marking the install complete
+                        # ends it sooner; nothing remote can extend it.
+                        commissioned = commissioning_deadline()
                         return self.async_create_entry(
                             title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
                             data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},

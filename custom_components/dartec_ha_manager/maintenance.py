@@ -9,6 +9,13 @@ itself one.
 The window lives in memory on purpose. A restart closes it, so the failure
 mode is "support has to ask again", never "the door was left open".
 
+Commissioning is the exception, and deliberately stored the other way. Pairing
+opens it and it lasts until the install is marked complete — on the home, or
+by the manager, which may only ever close it — or ``COMMISSIONING_DAYS`` pass.
+It lives in the config entry's options because an install restarts Home
+Assistant many times, and consent that died on each restart is what made the
+window alone impractical. After it ends, the default is closed again.
+
 Every command the cloud executes is also written to this instance's own
 logbook. That matters commercially as much as technically: the homeowner can
 audit what Dartec did in their house using their own system, rather than
@@ -29,6 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_ALLOW = "allow_maintenance"
 SERVICE_END = "end_maintenance"
+SERVICE_COMPLETE = "complete_commissioning"
 
 DEFAULT_MINUTES = 60
 MAX_MINUTES = 480
@@ -39,9 +47,20 @@ _STATE_KEY = "_maintenance_until"
 # deliberately no command that turns either on. See `consent()`.
 OPT_COMMISSIONING_UNTIL = "commissioning_until"
 OPT_STANDING_CONSENT = "unattended_support"
-COMMISSIONING_MINUTES = 120
+# Commissioning ends when somebody says the install is done, and never later
+# than this after pairing. The cap is the owner's decision (2026-09-16): long
+# enough that an install spread over several site visits never stalls, short
+# enough that an abandoned one does not leave the locks reachable for good.
+COMMISSIONING_DAYS = 30
+# Written once, when commissioning is marked complete, and never cleared. The
+# deadline itself is never rewritten: completion is recorded beside it, so the
+# only thing any writer of these can do to the grant is end it.
+OPT_COMMISSIONING_COMPLETED_AT = "commissioning_completed_at"
+OPT_COMMISSIONING_COMPLETED_BY = "commissioning_completed_by"
+_COMPLETED_BY = ("local", "manager")
 _REGISTERED_KEY = "_maintenance_services_registered"
 _CANCEL_KEY = "_maintenance_expiry_cancel"
+_COMMISSIONING_CANCEL_KEY = "_commissioning_expiry_cancel"
 _NOTIFY_ID = "dartec_maintenance_window"
 
 # Anything showing the window's state listens for this. Without it a switch
@@ -83,6 +102,67 @@ def _entry_options(hass: HomeAssistant) -> dict:
         return {}
 
 
+def commissioning_deadline(paired_at: datetime | None = None) -> datetime:
+    """When a home paired at ``paired_at`` stops being in commissioning."""
+    return (paired_at or _now()) + timedelta(days=COMMISSIONING_DAYS)
+
+
+def _parse_time(value) -> datetime | None:
+    """An ISO timestamp from the options, or None. Only a string counts: a
+    boolean or a number written there is not a deadline, and reading one as
+    one is how a flag would turn into a permanent grant."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        _LOGGER.debug("Unparseable %s: %r", OPT_COMMISSIONING_UNTIL, value)
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def commissioning(hass: HomeAssistant) -> dict:
+    """Is this home still being commissioned, and until when?
+
+    ``state`` is one of:
+
+    * ``open`` — paired, not yet marked complete, before the deadline.
+    * ``complete`` — marked complete, on the home or by the manager.
+    * ``expired`` — the deadline passed without anyone marking it complete.
+    * ``invalid`` — a deadline further out than the cap allows. Nothing this
+      integration writes produces one, so whatever did is not trusted.
+    * ``none`` — no commissioning on record.
+
+    Read from the config entry's options every time, so it survives the
+    restarts commissioning is full of, and a completion made anywhere is
+    honoured everywhere at once.
+    """
+    options = _entry_options(hass)
+    until = _parse_time(options.get(OPT_COMMISSIONING_UNTIL))
+    completed_at = options.get(OPT_COMMISSIONING_COMPLETED_AT)
+    result = {"open": False, "state": "none",
+              "until": until.isoformat() if until else None,
+              "seconds_remaining": 0,
+              "completed_at": completed_at or None,
+              "completed_by": options.get(OPT_COMMISSIONING_COMPLETED_BY) or None}
+    if until is None:
+        return result
+    now = _now()
+    if completed_at:
+        # Any value at all closes it. A malformed completion stamp is still
+        # somebody ending commissioning, and erring towards closed is the
+        # direction that cannot hurt a customer.
+        result["state"] = "complete"
+    elif until <= now:
+        result["state"] = "expired"
+    elif until > commissioning_deadline(now) + timedelta(minutes=5):
+        result["state"] = "invalid"
+    else:
+        result.update(open=True, state="open",
+                      seconds_remaining=int((until - now).total_seconds()))
+    return result
+
+
 def consent(hass: HomeAssistant) -> dict:
     """May a sensitive operation run right now, and on whose authority?
 
@@ -95,11 +175,13 @@ def consent(hass: HomeAssistant) -> dict:
     exactly the key this whole module exists to withhold.
 
     * ``window`` — the switch, opened by someone standing there. Unchanged.
-    * ``commissioning`` — a time-boxed allowance written once, at pairing.
-      Whoever paired this home was holding the pairing token and was standing
-      in it; making them also flip a switch during an install they are
-      physically performing is ceremony, and in practice it stalled installs.
-      It expires on its own and nothing remote can renew it.
+    * ``commissioning`` — open from pairing until the install is marked
+      complete, and never longer than ``COMMISSIONING_DAYS``. Whoever paired
+      this home was holding the pairing token and was standing in it; making
+      them also flip a switch during an install they are physically performing
+      is ceremony, and in practice it stalled installs. The manager may *end*
+      it, but nothing remote can open, extend or renew it — see
+      `complete_commissioning`.
     * ``standing`` — an explicit opt-in in the integration's options, for
       sites that want unattended support. Off by default, visible in the UI,
       revocable there.
@@ -111,17 +193,11 @@ def consent(hass: HomeAssistant) -> dict:
     if options.get(OPT_STANDING_CONSENT):
         return {"allowed": True, "source": "standing"}
 
-    until = options.get(OPT_COMMISSIONING_UNTIL)
-    if until:
-        try:
-            expiry = datetime.fromisoformat(str(until))
-            if expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
-            if expiry > _now():
-                return {"allowed": True, "source": "commissioning",
-                        "seconds_remaining": int((expiry - _now()).total_seconds())}
-        except ValueError:
-            _LOGGER.debug("Unparseable %s: %r", OPT_COMMISSIONING_UNTIL, until)
+    state = commissioning(hass)
+    if state["open"]:
+        return {"allowed": True, "source": "commissioning",
+                "until": state["until"],
+                "seconds_remaining": state["seconds_remaining"]}
     return {"allowed": False, "source": None}
 
 
@@ -130,10 +206,62 @@ def status(hass: HomeAssistant) -> dict:
     until = _store(hass).get(_STATE_KEY)
     if not until or until <= _now():
         return {"open": False, "until": None, "seconds_remaining": 0,
-                "consent": consent(hass)}
+                "consent": consent(hass), "commissioning": commissioning(hass)}
     return {"open": True, "until": until.isoformat(),
             "seconds_remaining": int((until - _now()).total_seconds()),
-            "consent": consent(hass)}
+            "consent": consent(hass), "commissioning": commissioning(hass)}
+
+
+def switch_state(hass: HomeAssistant) -> dict:
+    """What the "Allow Dartec support" switch should say.
+
+    On whenever the window *or* commissioning is open: a homeowner looking at
+    an "off" switch during an install would be told access is shut while the
+    installer can in fact reach their locks. ``ends_at`` is when the later of
+    the two ends, which is when access through this switch actually stops.
+    """
+    window_until = _store(hass).get(_STATE_KEY)
+    window_open = bool(window_until and window_until > _now())
+    comm = commissioning(hass)
+    ends = [window_until] if window_open else []
+    if comm["open"]:
+        ends.append(_parse_time(comm["until"]))
+    end = max(ends) if ends else None
+    return {"on": window_open or comm["open"],
+            "ends_at": end.isoformat() if end else None,
+            "minutes_remaining": (round((end - _now()).total_seconds() / 60)
+                                  if end else 0),
+            "commissioning": comm["open"],
+            "commissioning_ends_at": comm["until"] if comm["open"] else None}
+
+
+def complete_commissioning(hass: HomeAssistant, by: str) -> dict:
+    """End commissioning now — the only change to it anyone can make.
+
+    Deliberately takes no deadline, duration or flag: it can only close. That
+    is what makes it safe for the manager to send, because a compromised cloud
+    that sends it has only locked itself out. On a home that is not
+    commissioning it changes nothing, and it never rewrites the deadline, so
+    it cannot be used to reopen one either.
+    """
+    by = by if by in _COMPLETED_BY else "local"
+    before = commissioning(hass)
+    if not before["open"]:
+        return {"ok": True, "changed": False, "commissioning": before,
+                "detail": f"not commissioning ({before['state']}); nothing to close"}
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    hass.config_entries.async_update_entry(entry, options={
+        **dict(entry.options),
+        OPT_COMMISSIONING_COMPLETED_AT: _now().isoformat(),
+        OPT_COMMISSIONING_COMPLETED_BY: by})
+    _cancel_commissioning_expiry(hass)
+    who = "by the Dartec manager" if by == "manager" else "on this home"
+    logbook(hass, f"Commissioning marked complete {who}. Sensitive operations "
+                  f"now need '{SWITCH_NAME}' switched on")
+    _LOGGER.info("Commissioning marked complete (%s)", by)
+    _notify_update(hass)
+    return {"ok": True, "changed": True, "commissioning": commissioning(hass),
+            "detail": "commissioning complete; sensitive operations need consent again"}
 
 
 def logbook(hass: HomeAssistant, message: str) -> None:
@@ -198,6 +326,44 @@ def _schedule_expiry(hass: HomeAssistant, until: datetime) -> None:
         _LOGGER.debug("Could not schedule expiry: %s", err)
 
 
+def _cancel_commissioning_expiry(hass: HomeAssistant) -> None:
+    cancel = _store(hass).pop(_COMMISSIONING_CANCEL_KEY, None)
+    if cancel:
+        try:
+            cancel()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Could not cancel commissioning timer: %s", err)
+
+
+def schedule_commissioning_expiry(hass: HomeAssistant) -> None:
+    """Turn the switch off when commissioning reaches its cap.
+
+    Like the window's timer this is for the display, not the gate: `consent`
+    checks the clock on every command. Called at setup, so a restart during
+    commissioning re-arms it from the stored deadline.
+    """
+    from homeassistant.helpers.event import async_track_point_in_utc_time
+
+    _cancel_commissioning_expiry(hass)
+    state = commissioning(hass)
+    if not state["open"]:
+        return
+
+    def _expired(_now) -> None:
+        _store(hass).pop(_COMMISSIONING_CANCEL_KEY, None)
+        if commissioning(hass)["state"] == "expired":
+            logbook(hass, f"Commissioning ended at its {COMMISSIONING_DAYS}-day "
+                          "limit without being marked complete. Sensitive "
+                          f"operations now need '{SWITCH_NAME}' switched on")
+        _notify_update(hass)
+
+    try:
+        _store(hass)[_COMMISSIONING_CANCEL_KEY] = async_track_point_in_utc_time(
+            hass, _expired, _parse_time(state["until"]))
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Could not schedule commissioning expiry: %s", err)
+
+
 def _dismiss(hass: HomeAssistant) -> None:
     try:
         from homeassistant.components import persistent_notification
@@ -247,8 +413,12 @@ async def async_register_services(hass: HomeAssistant) -> None:
     async def _end(call: ServiceCall) -> None:
         close_window(hass)
 
+    async def _complete(call: ServiceCall) -> None:
+        complete_commissioning(hass, "local")
+
     hass.services.async_register(DOMAIN, SERVICE_ALLOW, _allow, schema=ALLOW_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_END, _end)
+    hass.services.async_register(DOMAIN, SERVICE_COMPLETE, _complete)
     store[_REGISTERED_KEY] = True
 
 
@@ -258,7 +428,9 @@ async def async_unregister_services(hass: HomeAssistant) -> None:
         return
     hass.services.async_remove(DOMAIN, SERVICE_ALLOW)
     hass.services.async_remove(DOMAIN, SERVICE_END)
+    hass.services.async_remove(DOMAIN, SERVICE_COMPLETE)
     _cancel_expiry(hass)
+    _cancel_commissioning_expiry(hass)
     store[_REGISTERED_KEY] = False
     store[_STATE_KEY] = None
 

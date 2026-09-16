@@ -14,10 +14,18 @@ integration a customer is ever expected to use.
 Three things worth keeping true:
 
 **The switch reports the window, it does not hold it.** State comes from
-``maintenance.is_open`` every time it is asked, so a window opened by the
+``maintenance.switch_state`` every time it is asked, so a window opened by the
 service call, closed by a restart, or expired on its own shows correctly here.
 Two sources of truth for "may Dartec open the front door" is exactly the bug
 nobody wants.
+
+**It is on while the home is commissioning.** Pairing opens a commissioning
+period (see ``maintenance.commissioning``), and during it Dartec can operate
+the locks whether or not a window is open. A switch reading "off" then would
+tell the homeowner access is shut when it is not. So it reads on, and its
+``commissioning_ends_at`` attribute says when that ends. Switching it off ends
+commissioning for good, not just the window: "off" has to mean off, and there
+is no way back into commissioning short of pairing the home again.
 
 **It follows the window rather than polling it.** ``SIGNAL_UPDATE`` fires on
 every open and close, including the timed expiry, so the toggle flips at the
@@ -85,14 +93,16 @@ class MaintenanceSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        return maintenance.is_open(self.hass)
+        return maintenance.switch_state(self.hass)["on"]
 
     @property
     def extra_state_attributes(self) -> dict:
         """When it ends, so a dashboard can say so without a template."""
-        state = maintenance.status(self.hass)
-        return {"ends_at": state["until"],
-                "minutes_remaining": round(state["seconds_remaining"] / 60)}
+        state = maintenance.switch_state(self.hass)
+        return {"ends_at": state["ends_at"],
+                "minutes_remaining": state["minutes_remaining"],
+                "commissioning": state["commissioning"],
+                "commissioning_ends_at": state["commissioning_ends_at"]}
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(async_dispatcher_connect(
@@ -108,4 +118,7 @@ class MaintenanceSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         maintenance.close_window(self.hass)
+        # Off means off: during commissioning the window was never what kept
+        # access open, so closing it alone would leave the switch on.
+        maintenance.complete_commissioning(self.hass, "local")
         self.async_write_ha_state()
