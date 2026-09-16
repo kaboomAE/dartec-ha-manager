@@ -67,6 +67,41 @@ def normalise_path(path: str) -> str | None:
     return path
 
 
+def flatten_inputs(block: Any) -> dict[str, dict]:
+    """A blueprint's `input:` block → {input name: {"has_default": bool}}.
+
+    Blueprints may group inputs into collapsible sections, where a key holds
+    `{name, input: {...}}` rather than an input itself. The manager compares
+    these names across versions to refuse a breaking upgrade, so a section must
+    not be mistaken for an input called "advanced_settings".
+
+    Mirrored on the server in automation_blueprints.blueprint_inputs, which
+    parses the new version's YAML; the two must agree on what an input is.
+    """
+    found: dict[str, dict] = {}
+    for key, spec in (block or {}).items():
+        spec = spec if isinstance(spec, dict) else {}
+        if isinstance(spec.get("input"), dict):
+            found.update(flatten_inputs(spec["input"]))
+        else:
+            found[str(key)] = {"has_default": "default" in spec}
+    return found
+
+
+_AUTOMATION_ID = re.compile(r"^automation\.[a-z0-9_]+$")
+
+
+def validate_automation_ids(ids: Any) -> str | None:
+    """Refusal reason, or None. Only automation entity ids — this is a read of
+    their states, and there is no reason for it to accept anything else."""
+    if not isinstance(ids, list):
+        return "entity_ids must be a list"
+    if len(ids) > 500:
+        return "too many entity_ids"
+    bad = [i for i in ids if not (isinstance(i, str) and _AUTOMATION_ID.match(i))]
+    return f"not automation entity ids: {bad[:5]}" if bad else None
+
+
 def _domain(cmd: dict[str, Any]) -> str | None:
     domain = (cmd.get("domain") or "automation").strip()
     return domain if domain in DOMAINS else None
@@ -146,6 +181,10 @@ async def blueprint_list(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             # ours and usually the upstream repo for a customer's.
             "source_url": metadata.get("source_url"),
             "dartec": path.startswith(f"{NAMESPACE}/"),
+            # What the staged version accepts, so the manager can tell whether
+            # overriding it with a new version would break the automations
+            # already using it — before it does so, not after.
+            "inputs": flatten_inputs(metadata.get("input")),
             # A blueprint HA could not parse still occupies its path, and an
             # automation pointing at it is already broken. Surface it.
             "error": entry.get("error"),
@@ -190,6 +229,49 @@ async def blueprint_substitute(hass: HomeAssistant, cmd: dict[str, Any]) -> dict
             "detail": f"{path} renders on this home"}
 
 
+async def blueprint_consumers(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """The automations using one blueprint, and whether each actually loaded.
+
+    This is how an upgrade is checked. Overriding a blueprint reloads every
+    automation on it at once, and an automation whose blueprint no longer
+    validates does not error anywhere visible — its entity simply goes
+    `unavailable`. Asked straight after an upgrade, this is the difference
+    between "pushed" and "pushed and still working".
+
+    Uses Home Assistant's own `automations_with_blueprint`, the helper the
+    blueprint component itself uses to find what to reload, so "uses this
+    blueprint" means exactly what HA means by it.
+    """
+    from homeassistant.components.automation import automations_with_blueprint
+
+    path = normalise_path(cmd.get("path") or "")
+    if path is None:
+        return {"ok": False, "detail": f"path must be '{NAMESPACE}/<name>.yaml' — "
+                                       f"refused '{cmd.get('path')}'"}
+    expected = cmd.get("entity_ids") or []
+    refusal = validate_automation_ids(expected)
+    if refusal:
+        return {"ok": False, "detail": refusal}
+
+    # The union, not HA's list alone. Found live: once an automation fails to
+    # reload, automations_with_blueprint stops listing it — a broken automation
+    # no longer "uses" the blueprint as far as HA is concerned. Asked only that,
+    # an upgrade that broke every automation on it reported "0 automations
+    # reloaded and running", i.e. success. So the caller passes the ids it saw
+    # BEFORE the upgrade, and their states are read directly.
+    consumers = []
+    for entity_id in sorted(set(automations_with_blueprint(hass, path)) | set(expected)):
+        state = hass.states.get(entity_id)
+        consumers.append({"entity_id": entity_id,
+                          "state": state.state if state else "missing"})
+    broken = [c for c in consumers if c["state"] in ("unavailable", "missing")]
+    return {"ok": True, "path": path, "automations": consumers,
+            "broken": [c["entity_id"] for c in broken],
+            "detail": f"{len(consumers)} automation(s) use {path}"
+                      + (f", {len(broken)} not loaded" if broken else "")}
+
+
 HANDLERS = {"blueprint_install": blueprint_install,
             "blueprint_list": blueprint_list,
-            "blueprint_substitute": blueprint_substitute}
+            "blueprint_substitute": blueprint_substitute,
+            "blueprint_consumers": blueprint_consumers}

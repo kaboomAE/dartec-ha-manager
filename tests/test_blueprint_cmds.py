@@ -225,3 +225,65 @@ class TestHelperCreation:
 
         assert set(helper_cmds.HANDLERS) == {"helper_create"}
         assert not any("delete" in name for name in dir(helper_cmds))
+
+
+class TestBlueprintInputsReported:
+    """What `blueprint_list` reports so the manager can refuse a breaking
+    upgrade. Mirrored on the server, which parses the new version's YAML — the
+    two must agree on what counts as an input."""
+
+    def test_plain_inputs_and_their_defaults(self):
+        from blueprint_cmds import flatten_inputs
+
+        assert flatten_inputs({"speaker": {"name": "Speaker", "selector": {}},
+                               "volume": {"name": "Volume", "default": 0.5}}) == {
+            "speaker": {"has_default": False}, "volume": {"has_default": True}}
+
+    def test_sections_are_flattened_not_counted(self):
+        """A collapsible section is not an input called 'advanced'."""
+        from blueprint_cmds import flatten_inputs
+
+        assert flatten_inputs({"speaker": {"name": "S"},
+                               "advanced": {"name": "Advanced",
+                                            "input": {"fade": {"default": 3}}}}) == {
+            "speaker": {"has_default": False}, "fade": {"has_default": True}}
+
+    def test_a_default_of_none_is_still_a_default(self):
+        """`default:` with no value is how blueprints make an input optional."""
+        from blueprint_cmds import flatten_inputs
+
+        assert flatten_inputs({"x": {"default": None}}) == {"x": {"has_default": True}}
+
+    def test_nothing_or_junk_is_empty_not_an_error(self):
+        from blueprint_cmds import flatten_inputs
+
+        assert flatten_inputs(None) == {}
+        assert flatten_inputs({"x": "not a dict"}) == {"x": {"has_default": False}}
+
+    def test_reading_consumers_is_not_gated(self):
+        """It runs straight after an upgrade to check nothing broke, and must
+        not need a second round of consent to find out."""
+        assert is_sensitive({"action": "blueprint_consumers",
+                             "path": "dartec/athan.yaml"}) is False
+
+
+class TestConsumerIds:
+    """The ids an upgrade names so a broken automation is still looked at."""
+
+    def test_automation_ids_are_accepted(self):
+        from blueprint_cmds import validate_automation_ids
+
+        assert validate_automation_ids([]) is None
+        assert validate_automation_ids(["automation.athan", "automation.hall_light_2"]) is None
+
+    @pytest.mark.parametrize("ids", [
+        "automation.athan",                 # not a list
+        ["light.kitchen"],                  # a read of states, but only automations
+        ["automation.../x"],
+        [{"entity_id": "automation.x"}],
+        ["automation.x"] * 501,
+    ])
+    def test_anything_else_is_refused(self, ids):
+        from blueprint_cmds import validate_automation_ids
+
+        assert validate_automation_ids(ids)
