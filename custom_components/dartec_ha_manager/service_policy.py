@@ -20,13 +20,19 @@ and the default is deny. Three tiers:
   Requires an open maintenance window, which only the homeowner can grant (see
   ``maintenance.py``). ``SENSITIVE_ACTIONS`` extends the same gate to
   non-service commands of equal weight — HA accounts, code entering the home,
-  and backups leaving it.
+  and backups destroyed in it.
 * **ROUTINE** — reversible commissioning and diagnostic calls. No window
   needed; still logged to the homeowner's own logbook.
 
 Anything absent from all three is denied. Adding a capability is therefore a
 deliberate edit here rather than a side effect of the cloud learning a new
 trick.
+
+Separately from the tiers, a few actions need a standing **opt-in** instead of
+a window (``OPT_IN_ACTIONS``). Offsite backup copies are the case: they move
+the home's whole configuration and recorder history onto Dartec storage, which
+needs the customer's agreement, but they are meant to run on a schedule with
+nobody at the house, which a window can never serve.
 """
 from __future__ import annotations
 
@@ -112,16 +118,33 @@ SENSITIVE_ACTIONS = frozenset({
     # automation whose action is `shell_command.*` and let a trigger run it,
     # walking straight around the allowlist above.
     "automation_create",
-    # Reachability, data leaving the house, and data destroyed in it.
+    # Reachability, and data destroyed in the house. `backup_upload` is
+    # deliberately not here: data leaving the house is gated by the home's
+    # offsite opt-in instead (see OPT_IN_ACTIONS below).
     "tunnel_setup", "tunnel_stop",
     "link_setup", "link_stop",
-    "backup_upload", "backup_delete",
+    "backup_delete",
     # Add-ons are services in their own right.
     "addon_restart", "addon_start", "addon_stop",
 })
 
 # `blueprint_install` is deliberately NOT in the set above, because whether it
 # is sensitive depends on the command rather than the action. See is_sensitive.
+
+# Actions that need a standing opt-in on the home rather than a window: the
+# config entry option that must be switched on, keyed by action.
+#
+# An offsite copy is the whole configuration and recorder history leaving the
+# house, so it needs the customer's agreement. But it is also meant to run on
+# a schedule, with nobody there, and a window only ever exists while someone
+# is. The window is therefore not a substitute for the opt-in: an installer
+# with the switch on still cannot send a home's data offsite unless the home
+# has agreed to offsite copies. Like every other consent, the option is set in
+# Home Assistant and read there; no command can turn it on.
+OPT_OFFSITE_BACKUPS = "offsite_backups"
+OPT_IN_ACTIONS = {
+    "backup_upload": OPT_OFFSITE_BACKUPS,
+}
 
 
 def is_sensitive(cmd: dict) -> bool:
@@ -151,6 +174,23 @@ def is_sensitive(cmd: dict) -> bool:
     if action == "blueprint_install":
         return bool(cmd.get("allow_override"))
     return action in SENSITIVE_ACTIONS
+
+
+def check_opt_in(cmd: dict, options: dict) -> str | None:
+    """Refusal string if this command needs an opt-in the home has not given,
+    or None. `options` must be the home's own config entry options, never
+    anything from the command.
+
+    Only a real ``True`` counts. A string "false" is truthy, and an option
+    that reads as consent by accident is the one mistake this must not make.
+    """
+    option = OPT_IN_ACTIONS.get(cmd.get("action"))
+    if option is None or options.get(option) is True:
+        return None
+    return (f"'{cmd.get('action')}' is refused: offsite backup copies are off "
+            "for this home. Someone at the home can turn on 'Copy backups "
+            "offsite to Dartec' in this integration's options in Home "
+            "Assistant. The maintenance window does not stand in for it.")
 
 
 def classify(domain: str, service: str) -> Tier:
