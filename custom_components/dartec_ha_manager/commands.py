@@ -4,7 +4,7 @@ Security model: this agent is the last line of defence, because the threat it
 guards against is *our own cloud being compromised*. A guardrail that trusts
 the server for anything is therefore worth nothing.
 
-Two gates, both enforced here:
+Three gates, all enforced here:
 
 * Every ``call_service`` is checked as a ``domain.service`` pair against
   ``service_policy.py`` — default deny, with a permanently blocked tier that
@@ -15,6 +15,10 @@ Two gates, both enforced here:
   ``blueprint_install``, where staging a new file is inert and overriding one
   reloads live automations; see that function. ``maintenance.py`` holds the
   window itself.
+* A few actions need a standing opt-in on the home instead of a window —
+  ``service_policy.OPT_IN_ACTIONS``. Offsite backup copies are the one today:
+  they must run unattended, so they cannot wait for a window, but the data is
+  leaving the house, so they cannot run without the home having agreed.
 
 Everything that runs, and everything refused, is written to this instance's
 own logbook, so the house keeps its own record independent of ours.
@@ -28,7 +32,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import maintenance
-from .service_policy import check_call_service, is_sensitive
+from .service_policy import check_call_service, check_opt_in, is_sensitive
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,6 +120,10 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                            f"{maintenance.COMMISSIONING_DAYS} days by default; for a site "
                            "that wants unattended support, turn it on in this "
                            "integration's options.)")
+
+        refusal = check_opt_in(cmd, maintenance.entry_options(hass))
+        if refusal:
+            return _refuse(hass, str(action), refusal)
 
         if action in _ADDON_ACTIONS:
             result = await _addon_action(hass, cmd.get("addon_slug", ""),

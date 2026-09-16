@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
                        / "dartec_ha_manager"))
 
 from service_policy import (  # noqa: E402
-    SENSITIVE_ACTIONS, check_call_service, classify, validate_target)
+    OPT_OFFSITE_BACKUPS, SENSITIVE_ACTIONS, check_call_service, check_opt_in,
+    classify, is_sensitive, validate_target)
 
 
 def call(domain, service, **service_data):
@@ -155,11 +156,59 @@ class TestSensitiveActions:
     def test_code_entering_the_home_is_gated(self, action):
         assert action in SENSITIVE_ACTIONS
 
-    def test_data_leaving_the_home_is_gated(self):
-        assert "backup_upload" in SENSITIVE_ACTIONS
+    def test_offsite_copies_do_not_wait_for_a_window(self):
+        """They are meant to run on a schedule with nobody at the house, and a
+        window only exists while someone is. Consent for them is the offsite
+        opt-in instead; see TestOffsiteBackupOptIn."""
+        upload = {"action": "backup_upload", "backup_id": "abc"}
+        assert "backup_upload" not in SENSITIVE_ACTIONS
+        assert not is_sensitive(upload)
+
+    def test_data_destroyed_in_the_home_is_still_gated(self):
+        assert "backup_delete" in SENSITIVE_ACTIONS
+        assert is_sensitive({"action": "backup_delete", "backup_id": "abc"})
 
     def test_taking_a_backup_is_not_gated(self):
         """Creating one harms nothing; the control that matters is on sending
         it offsite, so the action and the service agree."""
         assert "backup_create" not in SENSITIVE_ACTIONS
         assert classify("backup", "create") == "routine"
+
+
+class TestOffsiteBackupOptIn:
+    """Data leaving the house needs the home's agreement, given on the home."""
+
+    UPLOAD = {"action": "backup_upload", "backup_id": "abc",
+              "upload_url": "https://manager.example/agent/backup-upload",
+              "upload_token": "t"}
+
+    def test_refused_when_the_home_has_not_opted_in(self):
+        refusal = check_opt_in(self.UPLOAD, {})
+        assert refusal and "offsite" in refusal
+
+    def test_refused_when_the_opt_in_is_off(self):
+        assert check_opt_in(self.UPLOAD, {OPT_OFFSITE_BACKUPS: False})
+
+    def test_allowed_once_the_home_opts_in(self):
+        assert check_opt_in(self.UPLOAD, {OPT_OFFSITE_BACKUPS: True}) is None
+
+    @pytest.mark.parametrize("value", ["true", "false", 1, "yes"])
+    def test_only_a_real_true_counts(self, value):
+        """An option that reads as consent by accident is the one mistake this
+        must not make."""
+        assert check_opt_in(self.UPLOAD, {OPT_OFFSITE_BACKUPS: value})
+
+    def test_unattended_support_is_not_offsite_consent(self):
+        """Letting Dartec act in the house is a different agreement from
+        letting the house's data leave it."""
+        assert check_opt_in(self.UPLOAD, {"unattended_support": True})
+
+    def test_the_command_cannot_opt_itself_in(self):
+        """check_opt_in reads options, never the command, for the opt-in."""
+        cmd = {**self.UPLOAD, OPT_OFFSITE_BACKUPS: True, "force": True}
+        assert check_opt_in(cmd, {})
+
+    @pytest.mark.parametrize("action", ["backup_list", "backup_create",
+                                        "backup_delete", "backup_schedule"])
+    def test_other_backup_actions_do_not_need_it(self, action):
+        assert check_opt_in({"action": action}, {}) is None

@@ -2,8 +2,8 @@
 
 The owner's rule (2026-09-16): consent on a newly paired home stays open while
 it is being commissioned, for 30 days unless a different period is set on the
-home itself, and is closed by default afterwards. Every test here pins one edge of that, and the ones in
-`TestTheManagerCanOnlyClose` pin the property that makes a cloud-sendable
+home itself, and is closed by default afterwards. Every test here pins one
+edge of that, and the ones in `TestTheManagerCanOnlyClose` pin the property that makes a cloud-sendable
 command acceptable at all — it can take access away and nothing else.
 
 Runs without Home Assistant, like the rest of this suite: the HA surface the
@@ -38,12 +38,6 @@ class _Any:
         return self
 
 
-class AbortFlow(Exception):
-    def __init__(self, reason):
-        super().__init__(reason)
-        self.reason = reason
-
-
 class _ConfigFlow:
     """Just enough of HA's ConfigFlow to run our user step."""
 
@@ -51,12 +45,24 @@ class _ConfigFlow:
         super().__init_subclass__(**kwargs)
 
     async def async_set_unique_id(self, unique_id):
+        """HA returns the entry already holding this unique id, if any."""
         self.unique_id = unique_id
-
-    def _abort_if_unique_id_configured(self):
         for entry in self.hass.config_entries.async_entries("dartec_ha_manager"):
-            if entry.unique_id == self.unique_id:
-                raise AbortFlow("already_configured")
+            if entry.unique_id == unique_id:
+                return entry
+        return None
+
+    def _async_current_entries(self, include_ignore=False):
+        return self.hass.config_entries.async_entries("dartec_ha_manager")
+
+    def async_abort(self, *, reason):
+        return {"type": "abort", "reason": reason}
+
+    def async_update_reload_and_abort(self, entry, *, data=None, reason=None):
+        # Only what the flow passes is changed — as in HA, options are kept.
+        if data is not None:
+            entry.data = dict(data)
+        return {"type": "abort", "reason": reason}
 
     def async_create_entry(self, *, title, data, options=None):
         return {"type": "create_entry", "title": title, "data": data,
@@ -115,9 +121,10 @@ DAY = timedelta(days=1)
 
 
 class FakeEntry:
-    def __init__(self, options=None, unique_id="inst-1"):
+    def __init__(self, options=None, unique_id="inst-1", data=None):
         self.options = dict(options or {})
         self.unique_id = unique_id
+        self.data = dict(data or {})
 
 
 class FakeEntries:
@@ -198,7 +205,7 @@ class FakeResponse:
     def __init__(self, body):
         self._body = body
 
-    async def json(self):
+    async def json(self, content_type="application/json"):
         return self._body
 
     async def __aenter__(self):
@@ -213,16 +220,20 @@ class FakeSession:
         self.instance_id = instance_id
 
     def post(self, url, json=None, timeout=None):
+        # /validate for a pasted token; /enrol for a code, which also hands
+        # back the home's fresh pairing token.
         return FakeResponse({"instance_id": self.instance_id,
-                             "customer_name": "Test", "instance_name": "Villa"})
+                             "customer_name": "Test", "instance_name": "Villa",
+                             "pairing_token": "fresh-token"})
 
 
-def pair(hass, instance_id="inst-1"):
+def pair(hass, instance_id="inst-1", typed="tok"):
+    """Pair with a pasted token, or with an enrolment code if `typed` is one."""
     hass.session = FakeSession(instance_id)
     flow = config_flow.DartecConfigFlow()
     flow.hass = hass
     return run(flow.async_step_user({"server_url": "https://manager.dartec.ae",
-                                     "pairing_token": "tok"}))
+                                     "pairing_token": typed}))
 
 
 class TestPairingOpensCommissioning:
@@ -250,19 +261,44 @@ class TestPairingOpensCommissioning:
         assert granted["allowed"] and granted["source"] == "commissioning"
         assert granted["seconds_remaining"] == 30 * 86400
 
-    def test_pairing_an_already_paired_home_again_does_not_reset_the_period(self, clock):
-        """The decision on re-pairing: the flow aborts on the existing unique
-        id *before* it writes any commissioning, so the running deadline — or
-        a completion — is untouched. A fresh period needs someone on site to
-        delete the integration and pair again, which is deliberate."""
-        entry = FakeEntry({maintenance.OPT_COMMISSIONING_UNTIL:
-                           (clock.now + 2 * DAY).isoformat()}, unique_id="inst-1")
-        hass = FakeHass(entries=[entry])
+    def _paired_entry(self, clock, **options):
+        return FakeEntry({maintenance.OPT_COMMISSIONING_UNTIL:
+                          (clock.now + 2 * DAY).isoformat(), **options},
+                         unique_id="inst-1", data={"pairing_token": "old"})
+
+    def test_pairing_again_with_a_token_does_not_reset_the_period(self, clock):
+        """The decision on re-pairing: an already-paired home is refused
+        before any commissioning is written, so the running deadline — or a
+        completion — is untouched."""
+        entry = self._paired_entry(clock)
         before = dict(entry.options)
-        with pytest.raises(AbortFlow) as aborted:
-            pair(hass, "inst-1")
-        assert aborted.value.reason == "already_configured"
+        result = pair(FakeHass(entries=[entry]), "inst-1")
+        assert result == {"type": "abort", "reason": "already_configured"}
         assert entry.options == before
+
+    def test_pairing_again_with_an_enrolment_code_keeps_the_period(self, clock):
+        """A code re-pairs in place — the home takes its new token — but only
+        the entry's data changes. The deadline is not restarted."""
+        entry = self._paired_entry(clock)
+        before = dict(entry.options)
+        result = pair(FakeHass(entries=[entry]), "inst-1", typed="W8DZ-HF3Q-PDTV-4RAQ")
+        assert result["reason"] == "repaired"
+        assert entry.data["pairing_token"] == "fresh-token"
+        assert entry.options == before
+
+    def test_pairing_again_does_not_reopen_a_completed_home(self, clock):
+        entry = self._paired_entry(clock)
+        hass = FakeHass(entries=[entry])
+        maintenance.complete_commissioning(hass, "manager")
+        pair(hass, "inst-1", typed="W8DZ-HF3Q-PDTV-4RAQ")
+        assert maintenance.consent(hass)["allowed"] is False
+
+    def test_a_code_pairs_a_new_home_with_a_thirty_day_period(self, clock):
+        result = pair(FakeHass(entries=[]), typed="W8DZ-HF3Q-PDTV-4RAQ")
+        assert result["type"] == "create_entry"
+        until = datetime.fromisoformat(
+            result["options"][maintenance.OPT_COMMISSIONING_UNTIL])
+        assert until == clock.now + 30 * DAY
 
 
 # --- Restarts ------------------------------------------------------------------

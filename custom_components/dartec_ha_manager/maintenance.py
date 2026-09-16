@@ -523,3 +523,10 @@ def request_window(hass: HomeAssistant, reason: str = "") -> dict:
     logbook(hass, f"Dartec support requested a maintenance window. {reason}".strip())
     return {"ok": True, "detail": "the homeowner has been asked to open a window",
             **status(hass)}
+
+
+def entry_options(hass: HomeAssistant) -> dict:
+    """The home's own options, for gates outside this module — the offsite
+    backup opt-in (``service_policy.check_opt_in``) reads them here so it sees
+    exactly what ``consent()`` sees, fresh on every command."""
+    return _entry_options(hass)

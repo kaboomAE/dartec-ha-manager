@@ -33,8 +33,8 @@ install rather than a number somebody remembered to update in two places.
   - **Never** — `shell_command`, `python_script`, `hassio.addon_stdin`,
     `hassio.host_shutdown` and `homeassistant.stop` are permanently blocked and
     no permission you grant can unlock them.
-  - **Sensitive** — locks, covers, alarm, climate, reboots, backups and account
-    changes need your consent, given on your own Home Assistant. It can come
+  - **Sensitive** — locks, covers, alarm, climate, reboots, deleting backups and
+    account changes need your consent, given on your own Home Assistant. It can come
     from three places, and support can ask for it but never grant itself any:
     - **Commissioning.** Pairing opens it, because whoever paired the home was
       standing in it with its pairing token. It lasts until the install is
@@ -55,6 +55,12 @@ install rather than a number somebody remembered to update in two places.
     Once commissioning ends, access is closed until you switch it on again.
   - **Routine** — reversible commissioning and diagnostic calls, which need no
     window.
+- **Offsite backup copies** send your configuration and history to Dartec's
+  storage, so they only run if you turn on *Copy backups offsite to Dartec* in
+  this integration's options. It is off by default, and you can turn it off
+  there at any time. It needs no maintenance window, so copies can run on a
+  schedule while nobody is home. The maintenance window does not stand in for
+  this setting.
 - Calls that would target the whole house at once (`entity_id: all`, or no
   target at all) are refused.
 - Every command executed or refused is written to **your own logbook**, so the
@@ -76,7 +82,7 @@ Copy `custom_components/dartec_ha_manager/` into your HA `config/custom_componen
 
 ## Setup
 
-*Settings → Devices & Services → Add Integration → "Dartec HA Manager"*, then enter the server URL and the pairing token provided by your Dartec installer.
+*Settings → Devices & Services → Add Integration → "Dartec HA Manager"*, then enter the server URL and the enrolment code provided by your Dartec installer. A code works once and expires within the hour; the integration trades it for this home's long-lived pairing token, which is what it keeps. A pairing token pasted directly still works.
 
 ## Supported installations
 

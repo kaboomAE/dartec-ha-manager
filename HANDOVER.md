@@ -41,7 +41,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | Module | Responsibility |
 |---|---|
 | `__init__.py` | Entry setup/unload. Restores branding from entry options, starts the cloud link |
-| `config_flow.py` | The setup dialog — server URL + pairing token |
+| `config_flow.py` | The setup dialog — server URL + enrolment code (redeemed for a pairing token) or pairing token |
 | `const.py` | `DOMAIN`, config keys, `SNAPSHOT_INTERVAL_S = 60`, reconnect backoff bounds |
 | `cloud_link.py` | The outbound WebSocket: connect, auth, push a snapshot every 60 s, handle inbound commands, reconnect with backoff |
 | `collector.py` | Builds the snapshot. Core version, integrations, add-ons, HACS, automations, dashboards, logs, host metrics, backups, areas, devices, entities |
@@ -221,6 +221,11 @@ check.
 - `include_all_addons` and `include_folders` are **Supervisor-only**. Sending them
   to a Container install makes core backup reject the entire request (0.10.2).
 - Core backups declare no size, so report the bytes actually streamed (0.10.3).
+- `backup_upload` is **not** window-gated. It needs the home's own
+  `offsite_backups` option (`service_policy.OPT_IN_ACTIONS`), set in the
+  integration's options, so scheduled copies can run with nobody there. The
+  window does not substitute for it, and neither does `unattended_support`.
+  `backup_delete` stays behind the window (0.16.0).
 
 **Branding**
 - The module is fetched **once per page load**. A tab left open keeps running the
@@ -254,7 +259,7 @@ check.
 | 0.10.3 | Accurate offsite copy size |
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
-| 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open |
+| 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
 
 ---
 
