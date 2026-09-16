@@ -117,6 +117,38 @@ SENSITIVE_ACTIONS = frozenset({
     "addon_restart", "addon_start", "addon_stop",
 })
 
+# `blueprint_install` is deliberately NOT in the set above, because whether it
+# is sensitive depends on the command rather than the action. See is_sensitive.
+
+
+def is_sensitive(cmd: dict) -> bool:
+    """Does this command need an open maintenance window?
+
+    For nearly every action the answer is a property of the action alone.
+    `blueprint_install` is the exception, and the distinction is real rather
+    than a convenience:
+
+    * Staging a **new** blueprint writes a file nothing references. It defines
+      no automation, runs no code, and changes nothing about how the house
+      behaves. Gating it would mean a homeowner had to stand at their tablet
+      for us to put an inert file on disk, and the practical result is that
+      the library never gets staged — so the expensive work lands in the one
+      short window we do get.
+    * **Overriding** an existing blueprint is the opposite. Home Assistant
+      reloads every automation using that path the moment the file lands, so
+      the new logic is live in someone's house immediately, with no restart
+      and no further consent. That is remote code deployment.
+
+    Only `allow_override` distinguishes them, and it is safe to read from the
+    command because it is self-limiting: with it false, HA itself refuses to
+    replace an existing blueprint. A cloud that lies by setting it true only
+    moves itself *behind* the window.
+    """
+    action = cmd.get("action")
+    if action == "blueprint_install":
+        return bool(cmd.get("allow_override"))
+    return action in SENSITIVE_ACTIONS
+
 
 def classify(domain: str, service: str) -> Tier:
     """Tier for one ``domain.service`` pair. Unknown pairs are ``unlisted``,
