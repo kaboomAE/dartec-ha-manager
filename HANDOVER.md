@@ -217,6 +217,11 @@ check.
 - `include_all_addons` and `include_folders` are **Supervisor-only**. Sending them
   to a Container install makes core backup reject the entire request (0.10.2).
 - Core backups declare no size, so report the bytes actually streamed (0.10.3).
+- `backup_upload` is **not** window-gated. It needs the home's own
+  `offsite_backups` option (`service_policy.OPT_IN_ACTIONS`), set in the
+  integration's options, so scheduled copies can run with nobody there. The
+  window does not substitute for it, and neither does `unattended_support`.
+  `backup_delete` stays behind the window (0.16.0).
 
 **Branding**
 - The module is fetched **once per page load**. A tab left open keeps running the
@@ -250,6 +255,7 @@ check.
 | 0.10.3 | Accurate offsite copy size |
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
+| 0.16.0 | Offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
 
 ---
 

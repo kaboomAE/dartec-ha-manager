@@ -19,6 +19,22 @@
       "already_configured": "This instance is already paired with Dartec HA Manager."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dartec HA Manager options",
+        "description": "Both are off unless you turn them on here, and you can turn either off again at any time. Dartec cannot change them.",
+        "data": {
+          "unattended_support": "Allow Dartec support without the maintenance switch",
+          "offsite_backups": "Copy backups offsite to Dartec"
+        },
+        "data_description": {
+          "unattended_support": "Dartec may operate locks, covers, the alarm and restarts without someone switching 'Allow Dartec support' on first.",
+          "offsite_backups": "Dartec may copy this home's backups, including its configuration and history, to Dartec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch."
+        }
+      }
+    }
+  },
   "services": {
     "allow_maintenance": {
       "name": "Dartec: allow maintenance",

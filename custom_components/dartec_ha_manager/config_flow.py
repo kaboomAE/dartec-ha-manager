@@ -15,6 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 from .maintenance import (COMMISSIONING_MINUTES, OPT_COMMISSIONING_UNTIL,
                           OPT_STANDING_CONSENT)
+from .service_policy import OPT_OFFSITE_BACKUPS
 
 # A bare "http://" URL is silently downgraded to plaintext ws:// by CloudLink,
 # which would put the pairing token — the key to this whole home — on the wire
@@ -97,6 +98,11 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
     Assistant's own settings, where the person who owns the house can see it
     and switch it off. Deliberately not a setting in the manager: the point of
     the whole consent model is that this answer is not ours to give.
+
+    Offsite backup copies are a separate switch, because they are a different
+    question. Unattended support is about what Dartec may *do* in the house;
+    offsite copies are about the house's data leaving it. A customer can
+    reasonably want either without the other, and both default to off.
     """
 
     def __init__(self, config_entry) -> None:
@@ -108,6 +114,7 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
             # happened, and rewriting options must not quietly extend it.
             options = dict(self._entry.options)
             options[OPT_STANDING_CONSENT] = bool(user_input.get(OPT_STANDING_CONSENT))
+            options[OPT_OFFSITE_BACKUPS] = bool(user_input.get(OPT_OFFSITE_BACKUPS))
             return self.async_create_entry(title="", data=options)
 
         return self.async_show_form(
@@ -115,5 +122,7 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Optional(OPT_STANDING_CONSENT,
                              default=self._entry.options.get(OPT_STANDING_CONSENT, False)): bool,
+                vol.Optional(OPT_OFFSITE_BACKUPS,
+                             default=self._entry.options.get(OPT_OFFSITE_BACKUPS, False)): bool,
             }),
         )

@@ -33,13 +33,19 @@ install rather than a number somebody remembered to update in two places.
   - **Never** — `shell_command`, `python_script`, `hassio.addon_stdin`,
     `hassio.host_shutdown` and `homeassistant.stop` are permanently blocked and
     no permission you grant can unlock them.
-  - **Sensitive** — locks, covers, alarm, climate, reboots, backups and account
-    changes need a *maintenance window* that only you can open, from inside
+  - **Sensitive** — locks, covers, alarm, climate, reboots, deleting backups
+    and account changes need a *maintenance window* that only you can open, from inside
     Home Assistant, by calling `dartec_ha_manager.allow_maintenance`. It expires
     on its own and closes on every restart. Support can ask for one; it cannot
     grant itself one.
   - **Routine** — reversible commissioning and diagnostic calls, which need no
     window.
+- **Offsite backup copies** send your configuration and history to Dartec's
+  storage, so they only run if you turn on *Copy backups offsite to Dartec* in
+  this integration's options. It is off by default, and you can turn it off
+  there at any time. It needs no maintenance window, so copies can run on a
+  schedule while nobody is home. The maintenance window does not stand in for
+  this setting.
 - Calls that would target the whole house at once (`entity_id: all`, or no
   target at all) are refused.
 - Every command executed or refused is written to **your own logbook**, so the
