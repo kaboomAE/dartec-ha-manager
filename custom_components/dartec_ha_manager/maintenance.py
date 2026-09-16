@@ -34,6 +34,12 @@ DEFAULT_MINUTES = 60
 MAX_MINUTES = 480
 
 _STATE_KEY = "_maintenance_until"
+# Consent that does not need somebody at the tablet right now. Both live in
+# the config entry's options, which means both are set on the home — there is
+# deliberately no command that turns either on. See `consent()`.
+OPT_COMMISSIONING_UNTIL = "commissioning_until"
+OPT_STANDING_CONSENT = "unattended_support"
+COMMISSIONING_MINUTES = 120
 _REGISTERED_KEY = "_maintenance_services_registered"
 _CANCEL_KEY = "_maintenance_expiry_cancel"
 _NOTIFY_ID = "dartec_maintenance_window"
@@ -67,13 +73,67 @@ def is_open(hass: HomeAssistant) -> bool:
     return bool(until and until > _now())
 
 
+def _entry_options(hass: HomeAssistant) -> dict:
+    """Our config entry's options, read fresh — the installer can change them
+    mid-session through the options flow."""
+    try:
+        entries = hass.config_entries.async_entries(DOMAIN)
+        return dict(entries[0].options) if entries else {}
+    except Exception:                    # noqa: BLE001 — never break a command
+        return {}
+
+
+def consent(hass: HomeAssistant) -> dict:
+    """May a sensitive operation run right now, and on whose authority?
+
+    Three ways to say yes. What they have in common is the only property that
+    matters: **each one is decided on this home.** The cloud may ask
+    (`maintenance_request`) and may read the answer, but no field in any
+    command grants it anything — a server we no longer control is still a
+    server that cannot act unattended in a house that has not agreed. That is
+    why there is no "force" here; it would hand the compromised-cloud case
+    exactly the key this whole module exists to withhold.
+
+    * ``window`` — the switch, opened by someone standing there. Unchanged.
+    * ``commissioning`` — a time-boxed allowance written once, at pairing.
+      Whoever paired this home was holding the pairing token and was standing
+      in it; making them also flip a switch during an install they are
+      physically performing is ceremony, and in practice it stalled installs.
+      It expires on its own and nothing remote can renew it.
+    * ``standing`` — an explicit opt-in in the integration's options, for
+      sites that want unattended support. Off by default, visible in the UI,
+      revocable there.
+    """
+    if is_open(hass):
+        return {"allowed": True, "source": "window"}
+
+    options = _entry_options(hass)
+    if options.get(OPT_STANDING_CONSENT):
+        return {"allowed": True, "source": "standing"}
+
+    until = options.get(OPT_COMMISSIONING_UNTIL)
+    if until:
+        try:
+            expiry = datetime.fromisoformat(str(until))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry > _now():
+                return {"allowed": True, "source": "commissioning",
+                        "seconds_remaining": int((expiry - _now()).total_seconds())}
+        except ValueError:
+            _LOGGER.debug("Unparseable %s: %r", OPT_COMMISSIONING_UNTIL, until)
+    return {"allowed": False, "source": None}
+
+
 def status(hass: HomeAssistant) -> dict:
     """Window state, in the shape the manager's UI consumes."""
     until = _store(hass).get(_STATE_KEY)
     if not until or until <= _now():
-        return {"open": False, "until": None, "seconds_remaining": 0}
+        return {"open": False, "until": None, "seconds_remaining": 0,
+                "consent": consent(hass)}
     return {"open": True, "until": until.isoformat(),
-            "seconds_remaining": int((until - _now()).total_seconds())}
+            "seconds_remaining": int((until - _now()).total_seconds()),
+            "consent": consent(hass)}
 
 
 def logbook(hass: HomeAssistant, message: str) -> None:

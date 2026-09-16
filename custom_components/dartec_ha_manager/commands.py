@@ -80,7 +80,12 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         if action == "maintenance_request":
             return maintenance.request_window(hass, str(cmd.get("reason") or ""))
 
-        window_open = maintenance.is_open(hass)
+        # Consent, not merely the switch: an interactive window, a
+        # time-boxed commissioning allowance written at pairing, or a standing
+        # opt-in set on this home. All three are decided here; none can be
+        # asserted by the caller. See maintenance.consent.
+        granted = maintenance.consent(hass)
+        window_open = granted["allowed"]
 
         if action == "call_service":
             refusal = check_call_service(cmd, maintenance_open=window_open)
@@ -92,10 +97,18 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
 
         sensitive = is_sensitive(cmd)
         if sensitive and not window_open:
+            # `force` in the command is read only to answer it. A cloud that
+            # asks to skip consent is told no in the same words as one that
+            # did not ask, because the answer does not depend on the asking.
             return _refuse(hass, str(action),
-                           f"'{action}' needs an open maintenance window. Ask the "
+                           f"'{action}' needs consent from this home. Ask the "
                            "homeowner to switch 'Allow Dartec support' on, or "
-                           "request one from the manager.")
+                           "request a window from the manager. (During an "
+                           "install, pairing grants a "
+                           f"{maintenance.COMMISSIONING_MINUTES}-minute "
+                           "commissioning period; for a site that wants "
+                           "unattended support, turn it on in this "
+                           "integration's options.)")
 
         if action in _ADDON_ACTIONS:
             result = await _addon_action(hass, cmd.get("addon_slug", ""),
@@ -126,8 +139,16 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             return {"ok": False, "detail": f"unsupported action '{action}'"}
 
         if sensitive:
-            maintenance.logbook(hass, f"Dartec ran '{action}' under an open "
-                                      "maintenance window")
+            # Which consent was relied on, not just that there was some. If a
+            # homeowner ever asks why something ran while they were out, the
+            # answer is in their own logbook, in their own words.
+            how = {"window": "under an open maintenance window",
+                   "commissioning": "during the commissioning period that "
+                                    "started when this home was paired",
+                   "standing": "under the standing 'unattended support' "
+                               "setting on this integration"}.get(
+                granted.get("source"), "under consent from this home")
+            maintenance.logbook(hass, f"Dartec ran '{action}' {how}")
         elif action == "media_upload" and result.get("uploaded"):
             maintenance.logbook(hass, f"Dartec added media file "
                                       f"'{result.get('media_content_id')}'")
