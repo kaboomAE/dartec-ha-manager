@@ -64,6 +64,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
     from .hacs_cmds import HANDLERS as HACS_HANDLERS
     from .helper_cmds import HANDLERS as HELPER_HANDLERS
     from .home_cmds import HANDLERS as HOME_HANDLERS
+    from .media_cmds import HANDLERS as MEDIA_HANDLERS
     from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
     from .link_cmds import HANDLERS as LINK_HANDLERS
     from .registry_cmds import HANDLERS as REGISTRY_HANDLERS
@@ -103,6 +104,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             result = await BLUEPRINT_HANDLERS[action](hass, cmd)
         elif action in HELPER_HANDLERS:
             result = await HELPER_HANDLERS[action](hass, cmd)
+        elif action in MEDIA_HANDLERS:
+            result = await MEDIA_HANDLERS[action](hass, cmd)
         elif action in LOVELACE_HANDLERS:
             result = await LOVELACE_HANDLERS[action](hass, cmd)
         elif action in HACS_HANDLERS:
@@ -125,6 +128,9 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         if sensitive:
             maintenance.logbook(hass, f"Dartec ran '{action}' under an open "
                                       "maintenance window")
+        elif action == "media_upload" and result.get("uploaded"):
+            maintenance.logbook(hass, f"Dartec added media file "
+                                      f"'{result.get('media_content_id')}'")
         elif action == "blueprint_install" and result.get("ok"):
             # Inert, so it needed no window — but a file did appear on their
             # disk, and the house keeping its own record of that is the whole
