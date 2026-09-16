@@ -41,7 +41,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | Module | Responsibility |
 |---|---|
 | `__init__.py` | Entry setup/unload. Restores branding from entry options, starts the cloud link |
-| `config_flow.py` | The setup dialog — server URL + pairing token |
+| `config_flow.py` | The setup dialog — server URL + enrolment code (redeemed for a pairing token) or pairing token |
 | `const.py` | `DOMAIN`, config keys, `SNAPSHOT_INTERVAL_S = 60`, reconnect backoff bounds |
 | `cloud_link.py` | The outbound WebSocket: connect, auth, push a snapshot every 60 s, handle inbound commands, reconnect with backoff |
 | `collector.py` | Builds the snapshot. Core version, integrations, add-ons, HACS, automations, dashboards, logs, host metrics, backups, areas, devices, entities |

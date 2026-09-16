@@ -67,7 +67,7 @@ Copy `custom_components/dartec_ha_manager/` into your HA `config/custom_componen
 
 ## Setup
 
-*Settings → Devices & Services → Add Integration → "Dartec HA Manager"*, then enter the server URL and the pairing token provided by your Dartec installer.
+*Settings → Devices & Services → Add Integration → "Dartec HA Manager"*, then enter the server URL and the enrolment code provided by your Dartec installer. A code works once and expires within the hour; the integration trades it for this home's long-lived pairing token, which is what it keeps. A pairing token pasted directly still works.
 
 ## Supported installations
 

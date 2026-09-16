@@ -3,20 +3,28 @@
     "step": {
       "user": {
         "title": "Connect to Dartec HA Manager",
-        "description": "Paste the pairing token generated in the Dartec admin panel for this home.",
+        "description": "Enter the enrolment code from the Dartec admin panel for this home. A pairing token also works.",
         "data": {
           "server_url": "Dartec server URL",
-          "pairing_token": "Pairing token"
+          "pairing_token": "Enrolment code or pairing token"
         }
       }
     },
     "error": {
-      "invalid_token": "Unknown pairing token — generate a new one in the Dartec admin panel.",
+      "invalid_token": "Unknown pairing token — generate an enrolment code in the Dartec admin panel.",
+      "invalid_code": "Unknown enrolment code. Check it was typed correctly, or generate a new one in the Dartec admin panel.",
+      "code_expired": "This enrolment code has expired. Generate a new one in the Dartec admin panel.",
+      "code_used": "This enrolment code has already been used. Generate a new one in the Dartec admin panel.",
+      "code_revoked": "This enrolment code was revoked. Generate a new one in the Dartec admin panel.",
+      "wrong_instance": "This enrolment code is for a different home than the one this Home Assistant is paired to. Check the code, or remove the existing Dartec integration first.",
+      "rate_limited": "Too many failed attempts from this network. Wait a few minutes and try again.",
+      "enrolment_unsupported": "This Dartec server does not accept enrolment codes. Use a pairing token instead.",
       "cannot_connect": "Could not reach the Dartec server. Check the URL and internet connection.",
       "insecure_url": "The server URL must start with https:// — the pairing token is the key to this home and must not travel over an unencrypted connection."
     },
     "abort": {
-      "already_configured": "This instance is already paired with Dartec HA Manager."
+      "already_configured": "This instance is already paired with Dartec HA Manager.",
+      "repaired": "This home was already paired. Its credential has been replaced with the new one and the integration reloaded."
     }
   },
   "options": {
