@@ -52,9 +52,18 @@ OPT_STANDING_CONSENT = "unattended_support"
 # enough that an install spread over several site visits never stalls, short
 # enough that an abandoned one does not leave the locks reachable for good.
 COMMISSIONING_DAYS = 30
-# Written once, when commissioning is marked complete, and never cleared. The
-# deadline itself is never rewritten: completion is recorded beside it, so the
-# only thing any writer of these can do to the grant is end it.
+# The period can be set longer (or shorter) in this integration's options — a
+# test server wants months, not weeks. That is a setting on the home, in Home
+# Assistant's own UI, like the standing opt-in; nothing the manager sends can
+# write it. See `apply_commissioning_options`.
+OPT_COMMISSIONING_DAYS = "commissioning_days"
+MAX_COMMISSIONING_DAYS = 3650
+# A checkbox in the options form, never stored: start a fresh period now.
+OPT_RESTART_COMMISSIONING = "restart_commissioning"
+# Written when commissioning is marked complete. Completion never rewrites the
+# deadline — it is recorded beside it, so the only thing the manager's command
+# can do to the grant is end it. Only the local options form clears it, by
+# deliberately starting a new period.
 OPT_COMMISSIONING_COMPLETED_AT = "commissioning_completed_at"
 OPT_COMMISSIONING_COMPLETED_BY = "commissioning_completed_by"
 _COMPLETED_BY = ("local", "manager")
@@ -102,9 +111,64 @@ def _entry_options(hass: HomeAssistant) -> dict:
         return {}
 
 
-def commissioning_deadline(paired_at: datetime | None = None) -> datetime:
+def commissioning_days(options: dict) -> int:
+    """The commissioning period this home is set to, in days.
+
+    ``COMMISSIONING_DAYS`` unless the installer chose another length in the
+    options. Only a real integer counts (``True`` is an int in Python and is
+    not a number of days), and it is clamped to the form's own range.
+    """
+    value = options.get(OPT_COMMISSIONING_DAYS)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return COMMISSIONING_DAYS
+    return max(1, min(value, MAX_COMMISSIONING_DAYS))
+
+
+def commissioning_deadline(paired_at: datetime | None = None,
+                           days: int = COMMISSIONING_DAYS) -> datetime:
     """When a home paired at ``paired_at`` stops being in commissioning."""
-    return (paired_at or _now()) + timedelta(days=COMMISSIONING_DAYS)
+    return (paired_at or _now()) + timedelta(days=days)
+
+
+def apply_commissioning_options(options: dict, days: int, restart: bool
+                                ) -> tuple[dict, str | None]:
+    """New entry options from the local options form, and a logbook line.
+
+    Only ever called from the options flow — someone with admin rights on this
+    Home Assistant, in its own settings — which is why it may do what the
+    manager never can: lengthen commissioning, or start a fresh period.
+
+    * ``restart`` starts a period of ``days`` from now, and clears any earlier
+      completion. This is how a home that is already closed (a test server, a
+      home paired before 0.16.0) gets commissioning again.
+    * Changing ``days`` while commissioning is running moves its deadline to
+      pairing + the new length. It does not reopen a period that has already
+      ended; that takes ``restart``, so nothing reopens by accident.
+    """
+    days = max(1, min(int(days), MAX_COMMISSIONING_DAYS))
+    new = dict(options)
+    old_days = commissioning_days(options)
+    new[OPT_COMMISSIONING_DAYS] = days
+    until = _parse_time(options.get(OPT_COMMISSIONING_UNTIL))
+    now = _now()
+
+    if restart:
+        deadline = commissioning_deadline(now, days)
+        new[OPT_COMMISSIONING_UNTIL] = deadline.isoformat()
+        new.pop(OPT_COMMISSIONING_COMPLETED_AT, None)
+        new.pop(OPT_COMMISSIONING_COMPLETED_BY, None)
+        return new, (f"Commissioning started in this integration's settings for "
+                     f"{days} days, until {deadline.date().isoformat()}")
+
+    running = (until is not None and not options.get(OPT_COMMISSIONING_COMPLETED_AT)
+               and until > now)
+    if days != old_days and running:
+        deadline = commissioning_deadline(until - timedelta(days=old_days), days)
+        new[OPT_COMMISSIONING_UNTIL] = deadline.isoformat()
+        return new, (f"Commissioning period changed in this integration's "
+                     f"settings to {days} days; it now ends "
+                     f"{deadline.date().isoformat()}")
+    return new, None
 
 
 def _parse_time(value) -> datetime | None:
@@ -129,8 +193,9 @@ def commissioning(hass: HomeAssistant) -> dict:
     * ``open`` — paired, not yet marked complete, before the deadline.
     * ``complete`` — marked complete, on the home or by the manager.
     * ``expired`` — the deadline passed without anyone marking it complete.
-    * ``invalid`` — a deadline further out than the cap allows. Nothing this
-      integration writes produces one, so whatever did is not trusted.
+    * ``invalid`` — a deadline further out than this home's period allows
+      (``COMMISSIONING_DAYS``, or the length set in the options). Nothing
+      this integration writes produces one, so whatever did is not trusted.
     * ``none`` — no commissioning on record.
 
     Read from the config entry's options every time, so it survives the
@@ -155,7 +220,7 @@ def commissioning(hass: HomeAssistant) -> dict:
         result["state"] = "complete"
     elif until <= now:
         result["state"] = "expired"
-    elif until > commissioning_deadline(now) + timedelta(minutes=5):
+    elif until > commissioning_deadline(now, commissioning_days(options)) + timedelta(minutes=5):
         result["state"] = "invalid"
     else:
         result.update(open=True, state="open",
@@ -352,7 +417,8 @@ def schedule_commissioning_expiry(hass: HomeAssistant) -> None:
     def _expired(_now) -> None:
         _store(hass).pop(_COMMISSIONING_CANCEL_KEY, None)
         if commissioning(hass)["state"] == "expired":
-            logbook(hass, f"Commissioning ended at its {COMMISSIONING_DAYS}-day "
+            days = commissioning_days(_entry_options(hass))
+            logbook(hass, f"Commissioning ended at its {days}-day "
                           "limit without being marked complete. Sensitive "
                           f"operations now need '{SWITCH_NAME}' switched on")
         _notify_update(hass)
@@ -362,6 +428,14 @@ def schedule_commissioning_expiry(hass: HomeAssistant) -> None:
             hass, _expired, _parse_time(state["until"]))
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Could not schedule commissioning expiry: %s", err)
+
+
+async def async_options_updated(hass: HomeAssistant, entry) -> None:
+    """The entry's options changed — a new commissioning length, a restart,
+    a completion. Re-arm the cap timer from what is stored now, and let the
+    switch redraw."""
+    schedule_commissioning_expiry(hass)
+    _notify_update(hass)
 
 
 def _dismiss(hass: HomeAssistant) -> None:

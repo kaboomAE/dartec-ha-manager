@@ -21,7 +21,7 @@ complete_commissioning:
   name: "Dartec: commissioning complete"
   description: >-
     Mark the installation finished. Pairing lets Dartec perform sensitive
-    operations while the home is being set up, for at most 30 days; this ends
+    operations while the home is being set up, for 30 days by default; this ends
     that now. Afterwards Dartec needs "Allow Dartec support" switched on again,
     or unattended support enabled in this integration's options. Only ends
     access — nothing can use it to extend or reopen commissioning.

@@ -12,8 +12,10 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
-from .maintenance import (OPT_COMMISSIONING_UNTIL, OPT_STANDING_CONSENT,
-                          commissioning_deadline)
+from .maintenance import (MAX_COMMISSIONING_DAYS, OPT_COMMISSIONING_DAYS,
+                          OPT_COMMISSIONING_UNTIL, OPT_RESTART_COMMISSIONING,
+                          OPT_STANDING_CONSENT, apply_commissioning_options,
+                          commissioning_days, commissioning_deadline, logbook)
 
 # A bare "http://" URL is silently downgraded to plaintext ws:// by CloudLink,
 # which would put the pairing token — the key to this whole home — on the wire
@@ -95,12 +97,15 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class DartecOptionsFlow(config_entries.OptionsFlow):
-    """Standing consent, granted and revoked on the home.
+    """Consent settings, granted and revoked on the home.
 
-    A site that wants Dartec to work unattended says so here, in Home
-    Assistant's own settings, where the person who owns the house can see it
-    and switch it off. Deliberately not a setting in the manager: the point of
-    the whole consent model is that this answer is not ours to give.
+    A site that wants Dartec to work unattended says so here, and an installer
+    who needs commissioning to last longer than 30 days — a test server, an
+    install spread over months — sets the length here, or starts a fresh
+    period. Both live in Home Assistant's own settings, where the person who
+    owns the house can see them. Deliberately not settings in the manager: the
+    point of the whole consent model is that these answers are not ours to
+    give.
     """
 
     def __init__(self, config_entry) -> None:
@@ -108,16 +113,29 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
-            # Preserve the commissioning stamp: it is evidence of when pairing
-            # happened, and rewriting options must not quietly extend it.
             options = dict(self._entry.options)
             options[OPT_STANDING_CONSENT] = bool(user_input.get(OPT_STANDING_CONSENT))
+            # The commissioning deadline is only rewritten when the length
+            # actually changes on a running period, or a restart is ticked —
+            # saving the form for any other reason must not quietly extend it.
+            options, change = apply_commissioning_options(
+                options,
+                user_input.get(OPT_COMMISSIONING_DAYS, commissioning_days(options)),
+                bool(user_input.get(OPT_RESTART_COMMISSIONING)))
+            if change:
+                logbook(self.hass, change)
             return self.async_create_entry(title="", data=options)
 
+        options = self._entry.options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(OPT_STANDING_CONSENT,
-                             default=self._entry.options.get(OPT_STANDING_CONSENT, False)): bool,
+                             default=options.get(OPT_STANDING_CONSENT, False)): bool,
+                vol.Optional(OPT_COMMISSIONING_DAYS,
+                             default=commissioning_days(options)):
+                    vol.All(vol.Coerce(int),
+                            vol.Range(min=1, max=MAX_COMMISSIONING_DAYS)),
+                vol.Optional(OPT_RESTART_COMMISSIONING, default=False): bool,
             }),
         )

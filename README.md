@@ -40,8 +40,11 @@ install rather than a number somebody remembered to update in two places.
       standing in it with its pairing token. It lasts until the install is
       marked complete — by calling `dartec_ha_manager.complete_commissioning`,
       by switching **Allow Dartec support** off, or from Dartec's manager — and
-      never longer than **30 days**. It survives restarts. The manager can end
-      it early; nothing remote can open, extend or restart it.
+      never longer than **30 days** by default. It survives restarts. The
+      manager can end it early; nothing remote can open, extend or restart it.
+      On the home, the integration's options (*Configure*) can set a different
+      length — up to 3650 days, e.g. for a test server — or start a new
+      commissioning period now, which also reopens a home that is closed.
     - **The Allow Dartec support switch** (or
       `dartec_ha_manager.allow_maintenance`) opens a window that ends on its
       own and on every restart. The switch reads *on* while commissioning is

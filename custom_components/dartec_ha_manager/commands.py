@@ -112,8 +112,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                            "homeowner to switch 'Allow Dartec support' on, or "
                            "request a window from the manager. (Pairing opens "
                            "a commissioning period that lasts until the "
-                           "install is marked complete, at most "
-                           f"{maintenance.COMMISSIONING_DAYS} days; for a site "
+                           "install is marked complete, "
+                           f"{maintenance.COMMISSIONING_DAYS} days by default; for a site "
                            "that wants unattended support, turn it on in this "
                            "integration's options.)")
 

@@ -1,8 +1,8 @@
 """Commissioning: open from pairing, closed when the install is done.
 
 The owner's rule (2026-09-16): consent on a newly paired home stays open while
-it is being commissioned, never for more than 30 days, and is closed by
-default afterwards. Every test here pins one edge of that, and the ones in
+it is being commissioned, for 30 days unless a different period is set on the
+home itself, and is closed by default afterwards. Every test here pins one edge of that, and the ones in
 `TestTheManagerCanOnlyClose` pin the property that makes a cloud-sendable
 command acceptable at all — it can take access away and nothing else.
 
@@ -84,7 +84,7 @@ _stub("aiohttp", ClientError=type("ClientError", (Exception,), {}))
 _stub("homeassistant")
 _stub("homeassistant.core", HomeAssistant=object, ServiceCall=object,
       callback=lambda f: f)
-_stub("homeassistant.config_entries", ConfigFlow=_ConfigFlow, OptionsFlow=object,
+_stub("homeassistant.config_entries", ConfigFlow=_ConfigFlow, OptionsFlow=_ConfigFlow,
       ConfigEntry=object)
 _stub("homeassistant.helpers")
 _stub("homeassistant.helpers.dispatcher", async_dispatcher_send=lambda *a, **k: None)
@@ -394,6 +394,7 @@ class TestTheManagerCanOnlyClose:
         {"until": "2099-01-01T00:00:00+00:00"},
         {"days": 365},
         {"extend": True, "force": True},
+        {"commissioning_days": 365, "restart_commissioning": True},
         {"commissioning_until": "2099-01-01T00:00:00+00:00"},
     ])
     def test_it_cannot_reopen_a_completed_home(self, clock, extra):
@@ -528,3 +529,117 @@ class TestTheSwitchTellsTheTruth:
         assert entity.is_on is False
         assert maintenance.consent(hass)["allowed"] is False
         assert maintenance.commissioning(hass)["completed_by"] == "local"
+
+
+# --- A longer period, set on the home ------------------------------------------
+
+def options_flow(hass, user_input):
+    flow = config_flow.DartecOptionsFlow(hass.config_entries.async_entries("x")[0])
+    flow.hass = hass
+    result = run(flow.async_step_init(user_input))
+    hass.config_entries.async_entries("x")[0].options = dict(result["data"])
+    return result
+
+
+class TestALongerPeriodSetOnTheHome:
+    """A test server needs commissioning for months. The length is a setting in
+    this integration's options — on the home, like the standing opt-in — and
+    still nothing the manager sends can change it."""
+
+    def test_the_default_is_still_thirty(self):
+        assert maintenance.commissioning_days({}) == 30
+
+    @pytest.mark.parametrize("junk", [True, "90", 90.5, None])
+    def test_only_a_real_number_of_days_counts(self, junk):
+        assert maintenance.commissioning_days({maintenance.OPT_COMMISSIONING_DAYS: junk}) == 30
+
+    def test_a_deadline_beyond_thirty_days_is_honoured_when_the_home_says_so(self, clock):
+        until = (clock.now + 80 * DAY).isoformat()
+        without = FakeHass({maintenance.OPT_COMMISSIONING_UNTIL: until})
+        assert maintenance.commissioning(without)["state"] == "invalid"
+        with_days = FakeHass({maintenance.OPT_COMMISSIONING_UNTIL: until,
+                              maintenance.OPT_COMMISSIONING_DAYS: 90})
+        assert maintenance.consent(with_days)["source"] == "commissioning"
+
+    def test_lengthening_a_running_period_counts_from_pairing(self, clock):
+        hass = paired(clock)
+        paired_at = clock.now
+        clock.advance(10 * DAY)
+        options_flow(hass, {"commissioning_days": 90})
+        assert hass.options[maintenance.OPT_COMMISSIONING_UNTIL] == \
+            (paired_at + 90 * DAY).isoformat()
+        assert any("changed" in line and "90 days" in line for line in hass.logbook())
+
+    def test_it_closes_at_the_longer_cap(self, clock):
+        hass = paired(clock)
+        options_flow(hass, {"commissioning_days": 90})
+        clock.advance(89 * DAY)
+        assert maintenance.consent(hass)["allowed"]
+        clock.advance(2 * DAY)
+        assert maintenance.consent(hass)["allowed"] is False
+
+    def test_shortening_it_can_close_it(self, clock):
+        hass = paired(clock)
+        clock.advance(10 * DAY)
+        options_flow(hass, {"commissioning_days": 5})
+        assert maintenance.consent(hass)["allowed"] is False
+
+    def test_saving_the_form_unchanged_does_not_move_the_deadline(self, clock):
+        hass = paired(clock)
+        until = hass.options[maintenance.OPT_COMMISSIONING_UNTIL]
+        clock.advance(10 * DAY)
+        options_flow(hass, {"unattended_support": False, "commissioning_days": 30})
+        assert hass.options[maintenance.OPT_COMMISSIONING_UNTIL] == until
+        assert hass.logbook() == []
+
+    def test_a_new_length_does_not_reopen_a_finished_period(self, clock):
+        """Reopening is its own, explicit choice."""
+        hass = paired(clock)
+        maintenance.complete_commissioning(hass, "manager")
+        options_flow(hass, {"commissioning_days": 365})
+        assert maintenance.consent(hass)["allowed"] is False
+
+    def test_restart_opens_a_closed_home_for_the_chosen_length(self, clock):
+        """The test server: already closed, and wants a long period now."""
+        hass = paired(clock)
+        maintenance.complete_commissioning(hass, "manager")
+        options_flow(hass, {"commissioning_days": 180, "restart_commissioning": True})
+        state = maintenance.commissioning(hass)
+        assert state["open"] and state["completed_at"] is None
+        assert state["until"] == (clock.now + 180 * DAY).isoformat()
+        assert any("started" in line for line in hass.logbook())
+
+    def test_restart_opens_a_home_paired_before_0_16(self, clock):
+        """Homes paired on 0.15.x stay closed unless someone does this on site."""
+        hass = FakeHass({maintenance.OPT_COMMISSIONING_UNTIL:
+                         (clock.now - 20 * DAY).isoformat()})
+        assert maintenance.consent(hass)["allowed"] is False
+        options_flow(hass, {"commissioning_days": 60, "restart_commissioning": True})
+        assert maintenance.consent(hass)["source"] == "commissioning"
+
+    def test_the_restart_box_is_not_stored(self, clock):
+        hass = paired(clock)
+        options_flow(hass, {"commissioning_days": 60, "restart_commissioning": True})
+        assert maintenance.OPT_RESTART_COMMISSIONING not in hass.options
+
+    def test_the_manager_can_still_close_a_long_period(self, clock):
+        hass = paired(clock)
+        options_flow(hass, {"commissioning_days": 365, "restart_commissioning": True})
+        run(commands.execute_command(hass, {"action": "commissioning_complete"}))
+        assert maintenance.consent(hass)["allowed"] is False
+
+    def test_the_expiry_names_the_period_the_home_used(self, clock):
+        hass = paired(clock)
+        options_flow(hass, {"commissioning_days": 90})
+        _TIMERS.clear()
+        maintenance.schedule_commissioning_expiry(hass)
+        clock.advance(91 * DAY)
+        _TIMERS[-1]["action"](clock.now)
+        assert any("90-day limit" in line for line in hass.logbook())
+
+    def test_changing_the_options_rearms_the_timer(self, clock):
+        hass = paired(clock)
+        options_flow(hass, {"commissioning_days": 90})
+        _TIMERS.clear()
+        run(maintenance.async_options_updated(hass, None))
+        assert _TIMERS[-1]["when"] == clock.now + 90 * DAY

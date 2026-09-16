@@ -19,6 +19,23 @@
       "already_configured": "This instance is already paired with Dartec HA Manager."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dartec support access",
+        "description": "Consent for Dartec to perform sensitive operations (locks, covers, alarm, restarts). These settings are made on this home only; Dartec's manager cannot change them.",
+        "data": {
+          "unattended_support": "Allow unattended support (no switch needed)",
+          "commissioning_days": "Commissioning period (days)",
+          "restart_commissioning": "Start a new commissioning period now"
+        },
+        "data_description": {
+          "commissioning_days": "How long commissioning lasts after pairing, 30 by default. Changing it moves the deadline of a period that is still running; it does not reopen one that has ended.",
+          "restart_commissioning": "Opens commissioning for the period above, starting now, even if it was already marked complete or has expired."
+        }
+      }
+    }
+  },
   "services": {
     "allow_maintenance": {
       "name": "Dartec: allow maintenance",
@@ -32,7 +49,7 @@
     },
     "complete_commissioning": {
       "name": "Dartec: commissioning complete",
-      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (at most 30 days); afterwards sensitive operations need 'Allow Dartec support' switched on again."
+      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (30 days unless set otherwise in the integration's options); afterwards sensitive operations need 'Allow Dartec support' switched on again."
     },
     "end_maintenance": {
       "name": "Dartec: end maintenance",
