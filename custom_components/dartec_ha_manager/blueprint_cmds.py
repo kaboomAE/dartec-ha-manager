@@ -88,6 +88,30 @@ def flatten_inputs(block: Any) -> dict[str, dict]:
     return found
 
 
+def referenced_entities(inputs: dict[str, Any], names: list[str]) -> list[str]:
+    """Entity ids held by the named inputs, in order, without duplicates.
+
+    Understands the two shapes an entity-holding input takes: an entity id or
+    a list of them, and a target selector — `{"entity_id": ...}` — whose device
+    and area ids are not entities and are not returned. Anything else in a
+    named input is ignored rather than guessed at.
+    """
+    found: list[str] = []
+
+    def _add(value: Any) -> None:
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item and item not in found:
+                found.append(item)
+
+    for name in names:
+        value = inputs.get(name)
+        if isinstance(value, dict):
+            _add(value.get("entity_id"))
+        else:
+            _add(value)
+    return found
+
+
 _AUTOMATION_ID = re.compile(r"^automation\.[a-z0-9_]+$")
 
 
@@ -198,11 +222,21 @@ async def blueprint_substitute(hass: HomeAssistant, cmd: dict[str, Any]) -> dict
     """Render a staged blueprint against inputs and return the config HA would
     run — creating nothing.
 
-    This is the preflight, and it is worth more than any validation we could
-    write on the server: it is HA's own substitution, on this home, against the
-    file actually staged here. An input naming an entity this house does not
-    have fails here, in front of the installer, instead of becoming an
-    automation that never fires and that nobody looks at again.
+    This is the preflight, and it is the real gate: HA's own substitution, on
+    this home, against the file actually staged here — plus a check that every
+    entity the inputs name actually exists.
+
+    That second part is not optional, because substitution does not do it.
+    Tested live: HA renders a blueprint happily against an entity id that does
+    not exist, and the automation it would create simply never fires. The
+    manager cannot check existence itself either — its snapshot is built from
+    the entity registry, which omits anything without a `unique_id` (YAML
+    platforms, many template entities), and it told a home with five working
+    media players that it had none. `hass.states` is the one list that has
+    every entity the home really has, so the check is made here.
+
+    `entity_inputs` names which inputs hold entity ids. Only those are looked
+    at: a text input whose value happens to contain a dot is not an entity.
     """
     from .ws_bridge import call_own_ws
 
@@ -217,12 +251,20 @@ async def blueprint_substitute(hass: HomeAssistant, cmd: dict[str, Any]) -> dict
     inputs = cmd.get("input")
     if not isinstance(inputs, dict):
         return {"ok": False, "detail": "input (object) required"}
+    names = cmd.get("entity_inputs") or []
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        return {"ok": False, "detail": "entity_inputs must be a list of input names"}
 
     msg = await call_own_ws(hass, {"type": "blueprint/substitute", "domain": domain,
                                    "path": path, "input": inputs}, timeout=60)
     if not msg.get("success"):
         return {"ok": False, "detail": f"these inputs do not render on this home: "
                                        f"{_ws_error(msg)}"}
+
+    missing = [e for e in referenced_entities(inputs, names) if hass.states.get(e) is None]
+    if missing:
+        return {"ok": False, "path": path, "missing_entities": missing,
+                "detail": f"this home has no {', '.join(missing)}"}
 
     config = (msg.get("result") or {}).get("substituted_config")
     return {"ok": True, "path": path, "config": config,

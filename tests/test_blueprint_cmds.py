@@ -287,3 +287,32 @@ class TestConsumerIds:
         from blueprint_cmds import validate_automation_ids
 
         assert validate_automation_ids(ids)
+
+
+class TestReferencedEntities:
+    """What the preflight checks for existence against hass.states."""
+
+    def test_entity_ids_and_lists(self):
+        from blueprint_cmds import referenced_entities
+
+        assert referenced_entities({"a": "light.x", "b": ["sensor.y", "sensor.z"]},
+                                   ["a", "b"]) == ["light.x", "sensor.y", "sensor.z"]
+
+    def test_only_the_entity_ids_inside_a_target(self):
+        """Devices and areas are not entities and must not be reported missing."""
+        from blueprint_cmds import referenced_entities
+
+        assert referenced_entities({"t": {"entity_id": ["light.a"], "device_id": "d1",
+                                          "area_id": "majlis"}}, ["t"]) == ["light.a"]
+        assert referenced_entities({"t": {"area_id": "majlis"}}, ["t"]) == []
+
+    def test_only_named_inputs_are_looked_at(self):
+        """A text input whose value contains a dot is not an entity."""
+        from blueprint_cmds import referenced_entities
+
+        assert referenced_entities({"note": "v1.2", "light": "light.x"}, ["light"]) == ["light.x"]
+
+    def test_duplicates_and_junk_are_dropped(self):
+        from blueprint_cmds import referenced_entities
+
+        assert referenced_entities({"a": ["light.x", "light.x", 5, None, ""]}, ["a"]) == ["light.x"]
