@@ -27,6 +27,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await maintenance.async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Commissioning is stored in the entry, so it outlives the restarts an
+    # install is full of; this re-arms the timer that turns the switch off at
+    # the cap, which is the one part of it that lived in memory.
+    maintenance.schedule_commissioning_expiry(hass)
+    # ...and re-arms it whenever the options change, which is how an installer
+    # lengthens or restarts commissioning from this integration's settings.
+    entry.async_on_unload(entry.add_update_listener(maintenance.async_options_updated))
 
     link = CloudLink(hass, entry.data[CONF_SERVER_URL], entry.data[CONF_PAIRING_TOKEN])
     link.start()

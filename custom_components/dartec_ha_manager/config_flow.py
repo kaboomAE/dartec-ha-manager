@@ -6,7 +6,6 @@ which is stored exactly as a pasted token would be — so nothing after this
 flow knows or cares which one was typed. See enrolment.py."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -18,8 +17,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import enrolment
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
-from .maintenance import (COMMISSIONING_MINUTES, OPT_COMMISSIONING_UNTIL,
-                          OPT_STANDING_CONSENT)
+from .maintenance import (MAX_COMMISSIONING_DAYS, OPT_COMMISSIONING_DAYS,
+                          OPT_COMMISSIONING_UNTIL, OPT_RESTART_COMMISSIONING,
+                          OPT_STANDING_CONSENT, apply_commissioning_options,
+                          commissioning_days, commissioning_deadline, logbook)
 from .service_policy import OPT_OFFSITE_BACKUPS
 
 # A bare "http://" URL is silently downgraded to plaintext ws:// by CloudLink,
@@ -76,22 +77,25 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         # Re-pairing a home that is already set up. Redeeming
                         # the code has just replaced this home's pairing token
                         # at the manager, so the entry must take the new one
-                        # or it would never reconnect.
+                        # or it would never reconnect. Only `data` changes:
+                        # the options, and with them the commissioning
+                        # deadline or its completion, are left exactly as
+                        # they were, so re-pairing never restarts the period.
                         return self.async_update_reload_and_abort(
                             existing, data={**existing.data, CONF_SERVER_URL: server,
                                             CONF_PAIRING_TOKEN: token},
                             reason="repaired")
-                    # The commissioning allowance, written once, here.
-                    # Reaching this line means someone held a valid
+                    # Commissioning, written once, here, for a new entry
+                    # only. Reaching this line means someone held a valid
                     # pairing token or enrolment code and was standing in
                     # this house typing it in — which is the same evidence
                     # the maintenance switch collects, gathered a minute
                     # earlier. Asking them to then walk to a tablet
                     # mid-install was the thing stopping homes from being set
-                    # up. It is a timestamp, so it expires on its own, and
-                    # nothing remote can extend it.
-                    commissioned = (datetime.now(timezone.utc)
-                                    + timedelta(minutes=COMMISSIONING_MINUTES))
+                    # up. It is a deadline, so it ends on its own at the cap;
+                    # marking the install complete ends it sooner; nothing
+                    # remote can extend it.
+                    commissioned = commissioning_deadline()
                     return self.async_create_entry(
                         title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
                         data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
@@ -141,12 +145,15 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class DartecOptionsFlow(config_entries.OptionsFlow):
-    """Standing consent, granted and revoked on the home.
+    """Consent settings, granted and revoked on the home.
 
-    A site that wants Dartec to work unattended says so here, in Home
-    Assistant's own settings, where the person who owns the house can see it
-    and switch it off. Deliberately not a setting in the manager: the point of
-    the whole consent model is that this answer is not ours to give.
+    A site that wants Dartec to work unattended says so here, and an installer
+    who needs commissioning to last longer than 30 days — a test server, an
+    install spread over months — sets the length here, or starts a fresh
+    period. All of it lives in Home Assistant's own settings, where the person
+    who owns the house can see it. Deliberately not settings in the manager:
+    the point of the whole consent model is that these answers are not ours to
+    give.
 
     Offsite backup copies are a separate switch, because they are a different
     question. Unattended support is about what Dartec may *do* in the house;
@@ -159,19 +166,32 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
-            # Preserve the commissioning stamp: it is evidence of when pairing
-            # happened, and rewriting options must not quietly extend it.
             options = dict(self._entry.options)
             options[OPT_STANDING_CONSENT] = bool(user_input.get(OPT_STANDING_CONSENT))
             options[OPT_OFFSITE_BACKUPS] = bool(user_input.get(OPT_OFFSITE_BACKUPS))
+            # The commissioning deadline is only rewritten when the length
+            # actually changes on a running period, or a restart is ticked —
+            # saving the form for any other reason must not quietly extend it.
+            options, change = apply_commissioning_options(
+                options,
+                user_input.get(OPT_COMMISSIONING_DAYS, commissioning_days(options)),
+                bool(user_input.get(OPT_RESTART_COMMISSIONING)))
+            if change:
+                logbook(self.hass, change)
             return self.async_create_entry(title="", data=options)
 
+        options = self._entry.options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(OPT_STANDING_CONSENT,
-                             default=self._entry.options.get(OPT_STANDING_CONSENT, False)): bool,
+                             default=options.get(OPT_STANDING_CONSENT, False)): bool,
                 vol.Optional(OPT_OFFSITE_BACKUPS,
-                             default=self._entry.options.get(OPT_OFFSITE_BACKUPS, False)): bool,
+                             default=options.get(OPT_OFFSITE_BACKUPS, False)): bool,
+                vol.Optional(OPT_COMMISSIONING_DAYS,
+                             default=commissioning_days(options)):
+                    vol.All(vol.Coerce(int),
+                            vol.Range(min=1, max=MAX_COMMISSIONING_DAYS)),
+                vol.Optional(OPT_RESTART_COMMISSIONING, default=False): bool,
             }),
         )

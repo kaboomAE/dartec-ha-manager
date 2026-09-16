@@ -31,14 +31,18 @@
     "step": {
       "init": {
         "title": "Dartec HA Manager options",
-        "description": "Both are off unless you turn them on here, and you can turn either off again at any time. Dartec cannot change them.",
+        "description": "Consent for Dartec, decided on this home only — Dartec cannot change any of these. Unattended support and offsite copies are off unless you turn them on.",
         "data": {
           "unattended_support": "Allow Dartec support without the maintenance switch",
-          "offsite_backups": "Copy backups offsite to Dartec"
+          "offsite_backups": "Copy backups offsite to Dartec",
+          "commissioning_days": "Commissioning period (days)",
+          "restart_commissioning": "Start a new commissioning period now"
         },
         "data_description": {
           "unattended_support": "Dartec may operate locks, covers, the alarm and restarts without someone switching 'Allow Dartec support' on first.",
-          "offsite_backups": "Dartec may copy this home's backups, including its configuration and history, to Dartec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch."
+          "offsite_backups": "Dartec may copy this home's backups, including its configuration and history, to Dartec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch.",
+          "commissioning_days": "How long commissioning lasts after pairing, 30 by default. Changing it moves the deadline of a period that is still running; it does not reopen one that has ended.",
+          "restart_commissioning": "Opens commissioning for the period above, starting now, even if it was already marked complete or has expired."
         }
       }
     }
@@ -53,6 +57,10 @@
           "description": "How long the window stays open."
         }
       }
+    },
+    "complete_commissioning": {
+      "name": "Dartec: commissioning complete",
+      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (30 days unless set otherwise in the integration's options); afterwards sensitive operations need 'Allow Dartec support' switched on again."
     },
     "end_maintenance": {
       "name": "Dartec: end maintenance",
