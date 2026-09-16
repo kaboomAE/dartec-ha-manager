@@ -141,14 +141,15 @@ async def agent_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     a restart drops this websocket and the manager would otherwise record a
     timeout for a command that actually succeeded.
     """
-    from .collector import _agent_version
+    from .const import DOMAIN
     from .hacs_cmds import hacs_install
+    from .version import async_agent_version
 
-    # Pass our own on-disk version: when the agent was installed by hand, HACS
+    # Pass our own running version: when the agent was installed by hand, HACS
     # has no record of it and would otherwise treat any release as an upgrade.
     installed = await hacs_install(hass, {"repo": AGENT_REPO, "category": "integration",
                                           "only_if_missing": False,
-                                          "current_version": _agent_version(),
+                                          "current_version": await async_agent_version(hass, DOMAIN),
                                           "allow_downgrade": cmd.get("allow_downgrade", False)})
     if not installed.get("ok"):
         return {"ok": False, "detail": f"update failed: {installed.get('detail')}"}
