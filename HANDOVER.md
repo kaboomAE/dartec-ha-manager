@@ -61,9 +61,10 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
 | `www/` | Brand SVGs served as static assets |
 
-`tests/` holds the unit tests that need no Home Assistant — currently
-`test_version.py`. Deeper behaviour is tested from the server repo's end-to-end
-suite against a real Home Assistant.
+`tests/` holds the unit tests that need no Home Assistant. `tests/live/` runs
+this working tree inside real Home Assistant containers (§4). Deeper command
+behaviour is tested from the server repo's end-to-end suite against a real
+Home Assistant.
 
 ---
 
@@ -84,7 +85,7 @@ customer's Home Assistant for nothing.
 3. Tag: `git tag -a v0.10.5 -m "..."` and `git push origin v0.10.5`.
 4. **Publish a GitHub Release from that tag.** `gh release create v0.10.5
    --generate-notes`, or the web UI. Do not skip this.
-5. Confirm CI is green (three jobs, below).
+5. Confirm CI is green (four jobs, below).
 6. Roll out from the manager: Admin → Fleet maintenance.
 
 **Version numbers are compared by value, not text.** `version.py` exists because
@@ -95,13 +96,62 @@ under naive comparison. `tests/test_version.py` covers exactly that trap.
 
 ## 4. CI
 
-`.github/workflows/validate.yml`, on every push and monthly on the 5th.
+`.github/workflows/validate.yml`, on every push and pull request, and weekly
+on Monday.
 
 | Job | Checks |
 |---|---|
 | `hassfest` | Home Assistant's own manifest/structure validation against current dev |
 | `hacs` | That the repo is HACS-installable (`brands` ignored — needs a merged PR to home-assistant/brands, only required for the default store) |
 | `unit` | `pytest tests` — the HA-free modules |
+| `live` | `tests/live/run_live.py` against real `ghcr.io/home-assistant/home-assistant` images: **2026.8.3 and 2026.9.2** on every run, plus **`stable` and `beta`** on the weekly and manual runs |
+
+**What `live` proves, per version** (added 2026-09-17, first run against
+0.17.0):
+
+- A fresh container with `default_config`, the `demo` integration (61 devices,
+  no network), and the agent copied from the checkout. It is onboarded through
+  the real onboarding API, one device is put in an area, and the agent is
+  paired through its **real config flow** to a stub manager
+  (`tests/live/stub_manager.py`) running on loopback inside the container —
+  loopback because the config flow refuses any other plain-http URL.
+- The stub takes snapshots and sends `registry_query`. The device ids, names,
+  manufacturers and area names in both are compared with Home Assistant's own
+  `config/device_registry/list`, and `device_count` with its length. This is
+  what covers the **id-resolving path on 2026.8**, which until now had only run
+  against fakes: on 2026.8.3 iterating the registry really does yield ids.
+- The snapshot's `core.version` matches the running Home Assistant and
+  `agent_version` matches `manifest.json` (the loader path in `version.py`).
+- The Home Assistant log has **nothing reported against `dartec_ha_manager`**:
+  no `device_registry.devices` mapping deprecation, no blocking call on
+  `manifest.json`, no other `Detected ...` report, no `ERROR` line naming it.
+- **A canary integration** (`tests/live/canary/`) deliberately does both
+  wrong things, and the run fails unless Home Assistant reports the canary for
+  them (the mapping one only from 2026.9). Without it a clean log could mean
+  the warning's wording changed. It is never installed outside the container.
+
+It was checked by breaking the agent three ways — `.values()` in
+`registry_access` (caught on 2026.9.2), ids left unresolved (caught on
+2026.8.3: `registry_query` fails and `device_count` is missing, because the
+collector swallows the error), and a `manifest.json` read in `version.py`
+(caught as a blocking call).
+
+**Why it runs on every push, not only on a schedule:** each version takes about
+15 seconds once its image is pulled; the pull dominates the job. `stable` and
+`beta` stay off pushes so a new Home Assistant release cannot turn an unrelated
+PR red — the weekly run is where that shows up. On failure the job uploads the
+Home Assistant log, snapshot and registry dumps as `live-<version>`.
+
+Run it locally the same way (needs Docker and Python 3.10+, nothing else):
+
+```bash
+python tests/live/run_live.py                    # 2026.8.3 and 2026.9.2
+python tests/live/run_live.py 2026.9.2 --keep    # leave the container up to poke at
+```
+
+When a new Home Assistant release changes something the agent depends on, pin
+the last release before it and the first release with it in the matrix, the
+way 2026.8.3/2026.9.2 bracket the registry change.
 
 **Run hassfest locally before pushing** — it is the same container CI uses:
 
@@ -221,7 +271,8 @@ check.
 - **Never use `device_registry.devices` as a mapping** (`.values()`, `.get()`,
   `[id]`, `id in`). HA 2026.9 logs it and 2027.9 breaks it. Enumerate with
   `registry_access.all_devices`, look one up with `registry.async_get(id)`;
-  `tests/test_registry_access.py` sweeps the package for the old form.
+  `tests/test_registry_access.py` sweeps the package for the old form, and the
+  `live` CI job checks the real log on 2026.8.3 and 2026.9.2.
 
 **Dashboards**
 - The live `DashboardsCollection` is a setup-local variable and cannot be reached
@@ -311,6 +362,12 @@ check.
 - **The `brands` check is ignored in CI.** Listing in the HACS default store
   needs a merged PR to `home-assistant/brands`; custom-repository installs work
   without it.
-- **Test coverage is thin on this side.** Only `version.py` is unit-tested
-  directly; everything else is covered from the server repo's end-to-end suite,
-  which needs both a manager and a Home Assistant running.
+- **Test coverage is thin on this side.** The HA-free modules are unit-tested,
+  and `live` covers pairing, the snapshot's device and version data, and
+  `registry_query` inside real Home Assistant. Every other command is covered
+  only from the server repo's end-to-end suite, which needs both a manager and
+  a Home Assistant running. `tests/live/stub_manager.py` is the place to add
+  more: it can send any command and records the result.
+- **`live` reads the log about a second after the second snapshot.** Anything
+  the agent does later — a scheduled job, a command the stub does not send —
+  is not covered by its log check.

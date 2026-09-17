@@ -3,16 +3,20 @@
 # - hassfest: Home Assistant's own manifest/structure validation, always against
 #   the CURRENT dev release — catches manifest schema drift.
 # - HACS action: validates the repo is HACS-installable.
-# - monthly schedule: HA ships monthly; the collector touches internals
-#   (lovelace/system_log/hacs data), so re-validating on a schedule catches
-#   breakage even when we haven't pushed anything.
+# - live: the agent from this commit, paired to a stub manager inside real
+#   Home Assistant containers — see tests/live/run_live.py.
+# - weekly schedule: HA ships monthly; the collector touches internals
+#   (lovelace/system_log/hacs data, the device registry), so re-validating on a
+#   schedule catches breakage even when we haven't pushed anything. Scheduled
+#   and manual runs also put the live test against `stable` and `beta`, so a
+#   new release breaking the agent shows up before a customer home takes it.
 
 name: Validate
 on:
   push:
   pull_request:
   schedule:
-    - cron: "0 4 5 * *"  # monthly, a few days after HA's release day
+    - cron: "0 4 * * 1"  # weekly, Monday
   workflow_dispatch:
 
 jobs:
@@ -46,3 +50,28 @@ jobs:
       # the version comparison that decides whether a home gets overwritten
       # with older code.
       - run: python -m pytest tests -q
+
+  live:
+    # About 15 seconds a version once the image is pulled, and the pull is the
+    # bulk of the job, so it runs on every push rather than only on a schedule.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 2026.8.3: the last release where iterating the device registry yields
+        # ids. 2026.9.2: it yields entries, and mapping use is deprecated.
+        version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.8.3", "2026.9.2", "stable", "beta"]' || '["2026.8.3", "2026.9.2"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      - run: python tests/live/run_live.py ${{ matrix.version }} --artifacts live-artifacts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-${{ matrix.version }}
+          path: live-artifacts
+          if-no-files-found: ignore

@@ -1,0 +1,10 @@
+{
+  "domain": "dartec_live_canary",
+  "name": "Dartec live-test canary",
+  "codeowners": [],
+  "dependencies": [],
+  "documentation": "https://github.com/kaboomAE/dartec-ha-manager",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.0.0"
+}
