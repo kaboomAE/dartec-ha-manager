@@ -125,6 +125,14 @@ on Monday.
 - The Home Assistant log has **nothing reported against `dartec_ha_manager`**:
   no `device_registry.devices` mapping deprecation, no blocking call on
   `manifest.json`, no other `Detected ...` report, no `ERROR` line naming it.
+- **A HACS token swap** (added 2026-09-17, #8): the stub manager sends
+  `hacs_token_set` to a stand-in HACS (`tests/live/hacs_stub/`) that registers
+  HACS's reload-from-update-listener and writes to disk before it unloads. The
+  run fails unless the swap answers `ok`, the entry is still `loaded`, the
+  running setup has the new token, a snapshot reports it, the listener never
+  fired, and the log shows no `failed_unload`, `OperationNotAllowed` or
+  unretrieved task exception. The stub also replaces the agent's GitHub check,
+  since the container must not depend on GitHub accepting a made-up token.
 - **A canary integration** (`tests/live/canary/`) deliberately does both
   wrong things, and the run fails unless Home Assistant reports the canary for
   them (the mapping one only from 2026.9). Without it a clean log could mean
@@ -225,22 +233,35 @@ tunnel_status, tunnel_setup, tunnel_stop,
 backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 ```
 
-`hacs_token_set` (0.17.0) replaces the GitHub token in the home's existing
-HACS config entry — payload `{token, fingerprint}`, where the fingerprint is
-the first 16 hex characters of the token's SHA-256 and must match it. It never
-creates a HACS entry and never leaves a home with a worse token than it had:
-the new token is first checked with an authenticated GET to GitHub, then only
-`data["token"]` changes, HACS reloads and must reach LOADED within 60 s, and
-if it does not, the previous data (held in memory) is restored and HACS
-reloaded again. It answers `{ok: true, changed, fingerprint}` or
-`{ok: false, reason}`: `invalid_token`, `no_hacs_entry`, `token_rejected` and
-`github_unreachable` (nothing touched), `rolled_back` (swap undone, HACS
-loaded on the old token), `reload_failed` (the rollback failed too). Swaps
+`hacs_token_set` (0.17.0, fixed in 0.17.1) replaces the GitHub token in the
+home's existing HACS config entry — payload `{token, fingerprint}`, where the
+fingerprint is the first 16 hex characters of the token's SHA-256 and must
+match it. It never creates a HACS entry and never leaves a home with a worse
+token than it had: the new token is first checked with an authenticated GET to
+GitHub; then, only if HACS is loaded and its queue is idle, HACS is **unloaded
+through Home Assistant**, only `data["token"]` changes, HACS is **set up**
+again and must reach LOADED within 30 s. If it does not, the previous data
+(held in memory) goes back the same way. It answers
+`{ok: true, changed, fingerprint}` or `{ok: false, reason}`: `invalid_token`,
+`no_hacs_entry`, `token_rejected`, `github_unreachable`, `hacs_not_loaded` and
+`hacs_busy` (nothing touched), `rolled_back` (swap undone, HACS loaded on the
+old token), `reload_failed` (the rollback failed too).
+
+**Never write HACS's entry while it is loaded and then reload it.** HACS
+registers an update listener that unloads and sets itself up by hand, outside
+Home Assistant's state machine, so the write starts a reload of its own. 0.17.0
+did exactly that, followed by `async_reload`; on the bench Pi the two reloads
+collided and HACS sat in `failed_unload` until Core restarted, with the
+rollback refused the same way (#8). Unloading first runs HACS's
+`async_on_unload` callbacks, which remove the listener. The unit fakes now
+model the listener, and the live test runs the swap against a stand-in HACS
+(`tests/live/hacs_stub/`) that reloads the way HACS does and counts every
+listener reload; 0.17.0 fails it. Swaps
 and rollbacks are logbooked by fingerprint. The snapshot reports
 `hacs_token: {token_fingerprint}` — its own key, because `hacs` is the
 repository list. The token itself is never in a response, a log line or the
-logbook. It is **routine** (no consent) as a proposal awaiting the owner's
-sign-off; see the comment in `service_policy.py`, where switching it to
+logbook. It is **routine** (no consent), confirmed by the owner on
+2026-09-17; see the comment in `service_policy.py`, where switching it to
 sensitive is one line.
 
 `maintenance_status`, `maintenance_request` and (0.16.0) `commissioning_complete`
@@ -342,7 +363,8 @@ check.
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
-| 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. Unreleased |
+| 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. **Swapping broke HACS on a real install (#8): do not run 0.17.0 where the manager pushes tokens** |
+| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner. Unreleased |
 
 ---
 

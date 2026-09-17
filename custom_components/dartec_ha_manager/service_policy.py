@@ -140,8 +140,8 @@ SENSITIVE_ACTIONS = frozenset({
 # HACS does not load is rolled back to the previous token. Every swap and
 # every rollback is written to the home's logbook, by fingerprint. Rotation
 # has to reach every home, including ones nobody will open a window on.
-# PROPOSED, awaiting the owner's sign-off: if that is not given, add
-# "hacs_token_set" to SENSITIVE_ACTIONS - that one line is the whole switch.
+# Confirmed by the owner on 2026-09-17. Reversing it is one line: add
+# "hacs_token_set" to SENSITIVE_ACTIONS.
 
 # `blueprint_install` is deliberately NOT in the set above, because whether it
 # is sensitive depends on the command rather than the action. See is_sensitive.

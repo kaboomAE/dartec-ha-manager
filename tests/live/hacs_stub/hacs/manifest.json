@@ -1,0 +1,11 @@
+{
+  "domain": "hacs",
+  "name": "HACS (live test stand-in)",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/kaboomAE/dartec-ha-manager",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "0.0.0"
+}

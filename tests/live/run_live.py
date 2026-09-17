@@ -13,7 +13,12 @@ For each Home Assistant version given, this:
 5. checks that the devices the agent reported are exactly the devices Home
    Assistant's own API lists, with the right names and areas (one device is
    put in an area first, since the demo leaves them all room-less);
-6. checks the log: nothing reported against `dartec_ha_manager`, in
+6. rotates the HACS token with `hacs_token_set` against a stand-in HACS
+   (`hacs_stub/`) that reloads itself from an update listener the way HACS
+   does, and checks the entry is still loaded, running with the new token,
+   and that nothing in Home Assistant failed along the way
+   (dartec-ha-manager#8);
+7. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
@@ -44,6 +49,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 AGENT = REPO / "custom_components" / "dartec_ha_manager"
 CANARY = HERE / "canary" / "dartec_live_canary"
+HACS_STUB = HERE / "hacs_stub" / "hacs"
 
 IMAGE = "ghcr.io/home-assistant/home-assistant"
 # The last 2026.8 patch, where iterating the device registry yields ids, and
@@ -55,6 +61,14 @@ CANARY_DOMAIN = "dartec_live_canary"
 TOKEN = "live-test-pairing-token"
 STUB_PORT = 8765
 STATE_DIR = "/tmp/dartec-live"
+
+# The same made-up tokens as stub_manager.py (which the driver cannot import:
+# it needs aiohttp, which only the container has).
+HACS_OLD_TOKEN = "github_pat_11LIVETESTOLD0000000000_" + "o" * 59
+HACS_NEW_TOKEN = "github_pat_11LIVETESTNEW0000000000_" + "n" * 59
+# What HACS's reload race looked like on the bench Pi, in Home Assistant's words.
+HACS_BROKEN = re.compile(r"Error unloading entry|OperationNotAllowed|Task exception was never "
+                         r"retrieved|FAILED_UNLOAD|Config entry was never loaded")
 
 CONFIGURATION_YAML = f"""\
 default_config:
@@ -139,6 +153,7 @@ def prepare_config(root: Path) -> Path:
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(AGENT, components / AGENT_DOMAIN, ignore=ignore)
     shutil.copytree(CANARY, components / CANARY_DOMAIN, ignore=ignore)
+    shutil.copytree(HACS_STUB, components / "hacs", ignore=ignore)
     return config
 
 
@@ -175,6 +190,68 @@ def pair(base: str, token: str) -> None:
                                         "pairing_token": TOKEN})
     if done.get("type") != "create_entry":
         raise Failure(f"config flow did not create an entry: {done}")
+
+
+def fingerprint(token: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+
+def setup_hacs_stub(base: str, token: str) -> None:
+    flow = http("POST", f"{base}/api/config/config_entries/flow", token=token,
+                json_body={"handler": "hacs", "show_advanced_options": False})
+    done = http("POST", f"{base}/api/config/config_entries/flow/{flow['flow_id']}",
+                token=token, json_body={"token": HACS_OLD_TOKEN})
+    if done.get("type") != "create_entry":
+        raise Failure(f"the stand-in HACS was not set up: {done}")
+
+
+def hacs_entry_state(base: str, token: str) -> str | None:
+    entries = http("GET", f"{base}/api/config/config_entries/entry?domain=hacs", token=token)
+    return entries[0].get("state") if entries else None
+
+
+def check_hacs_swap(name: str, base: str, token: str, result: dict, timeout: float) -> list[str]:
+    problems = []
+    new_fp, old_fp = fingerprint(HACS_NEW_TOKEN), fingerprint(HACS_OLD_TOKEN)
+    if not (result.get("ok") is True and result.get("changed") is True
+            and result.get("fingerprint") == new_fp):
+        problems.append(f"hacs_token_set did not swap cleanly: "
+                        f"{ {k: v for k, v in result.items() if k != 'token'} }")
+    state = hacs_entry_state(base, token)
+    if state != "loaded":
+        problems.append(f"HACS's entry is {state} after the swap, not loaded")
+    try:
+        running = http("GET", f"{base}/api/states/switch.hacs_stub", token=token)
+        attributes = running.get("attributes") or {}
+    except urllib.error.HTTPError as err:
+        attributes = {"token_fingerprint": f"no switch.hacs_stub ({err.code})"}
+    if attributes.get("token_fingerprint") != new_fp:
+        problems.append(f"HACS is running with token {attributes.get('token_fingerprint')}, "
+                        f"expected the new {new_fp} (old was {old_fp})")
+    if attributes.get("listener_reloads") != 0:
+        problems.append(f"the swap set off HACS's own update listener "
+                        f"({attributes.get('listener_reloads')} reload(s)); that reload races the "
+                        "swap's and can leave HACS in failed_unload")
+
+    def reported():
+        files = docker("exec", name, "ls", STATE_DIR).split()
+        latest = max((int(f[9:-5]) for f in files if re.fullmatch(r"snapshot-\d+\.json", f)),
+                     default=0)
+        snap = read_state(name, f"snapshot-{latest}.json") if latest else None
+        section = (snap or {}).get("hacs_token") or {}
+        return section.get("token_fingerprint") == new_fp
+
+    try:
+        wait_for("a snapshot reporting the new HACS token", reported, timeout)
+    except Failure as err:
+        problems.append(str(err))
+    broken = [line.strip() for line in ha_log(name).splitlines() if HACS_BROKEN.search(line)]
+    if broken:
+        problems.append("Home Assistant failed while the token was swapped:\n  "
+                        + "\n  ".join(broken[:10]))
+    return problems
 
 
 def read_state(name: str, filename: str):
@@ -303,6 +380,9 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                  lambda: http("GET", f"{base}/api/config", token=token).get("state") == "RUNNING",
                  timeout)
         docker("exec", name, "python3", "/ha_registry.py", token, "--assign-area")
+        setup_hacs_stub(base, token)
+        wait_for("the stand-in HACS to load", lambda: hacs_entry_state(base, token) == "loaded",
+                 timeout, 1)
         pair(base, token)
         log(f"{version}: paired with the stub manager")
 
@@ -327,6 +407,11 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         if not query.get("ok"):
             problems.append(f"registry_query failed: {query}")
         problems += check_devices(snapshot, query, truth)
+
+        swap = wait_for("the hacs_token_set answer",
+                        lambda: read_state(name, "result-hacs-swap.json"), timeout)
+        problems += check_hacs_swap(name, base, token, swap, timeout)
+        log(f"{version}: HACS token swap answered {swap.get('reason') or 'ok'}")
 
         text = ha_log(name)
         # The deprecation boundary is judged on what is running, so `stable`
