@@ -178,9 +178,15 @@ backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 `hacs_token_set` (0.17.0) replaces the GitHub token in the home's existing
 HACS config entry — payload `{token, fingerprint}`, where the fingerprint is
 the first 16 hex characters of the token's SHA-256 and must match it. It never
-creates a HACS entry, changes only `data["token"]`, reloads HACS, and answers
-`{ok, changed, fingerprint}` or `{ok: false, reason}` (`invalid_token`,
-`no_hacs_entry`, `update_failed`, `reload_failed`). The snapshot reports
+creates a HACS entry and never leaves a home with a worse token than it had:
+the new token is first checked with an authenticated GET to GitHub, then only
+`data["token"]` changes, HACS reloads and must reach LOADED within 60 s, and
+if it does not, the previous data (held in memory) is restored and HACS
+reloaded again. It answers `{ok: true, changed, fingerprint}` or
+`{ok: false, reason}`: `invalid_token`, `no_hacs_entry`, `token_rejected` and
+`github_unreachable` (nothing touched), `rolled_back` (swap undone, HACS
+loaded on the old token), `reload_failed` (the rollback failed too). Swaps
+and rollbacks are logbooked by fingerprint. The snapshot reports
 `hacs_token: {token_fingerprint}` — its own key, because `hacs` is the
 repository list. The token itself is never in a response, a log line or the
 logbook. It is **routine** (no consent) as a proposal awaiting the owner's
@@ -242,8 +248,13 @@ check.
 
 **HACS token**
 - HACS reads its GitHub token once, at setup, so a new token only takes
-  effect when the entry reloads; `hacs_token_set` reloads it. A failed reload
-  still leaves the new token saved (`reason: reload_failed`, `changed: true`).
+  effect when the entry reloads; `hacs_token_set` reloads it and then waits
+  for `ConfigEntryState.LOADED`, because a reload that returns is not a HACS
+  that loaded.
+- Only 401/403-bad-credentials/404 from GitHub mean the token is bad. A 5xx,
+  a 429, a rate-limited 403 or no answer at all is `github_unreachable`, and
+  the manager retries later — calling those `token_rejected` would condemn a
+  good token.
 - Errors from updating the entry are reported by type only: an exception
   message can echo the data it was given, and that data holds the token.
 
@@ -280,7 +291,7 @@ check.
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
-| 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` replaces the token in an existing HACS entry and reloads it, logbooked by fingerprint; routine pending the owner's sign-off. Unreleased |
+| 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. Unreleased |
 
 ---
 

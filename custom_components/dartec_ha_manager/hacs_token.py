@@ -7,7 +7,7 @@ exists so HACS is not rate-limited by GitHub. It has to be rotated, and
 rotating it by visiting every house is how it would never get rotated.
 
 So the manager holds the current token, the snapshot reports which one each
-home has, and `hacs_token_set` replaces it where they differ. Two rules shape
+home has, and `hacs_token_set` replaces it where they differ. Three rules shape
 everything here:
 
 * **The token never leaves the entry except into the entry.** The snapshot
@@ -18,15 +18,19 @@ everything here:
   This never creates a HACS entry: setting HACS up is `integration_setup`,
   which is behind consent. Replacing one read-only token with another cannot
   add a repository, download anything, or change what HACS is allowed to do.
+* **Never a worse token than the home had.** The new token is checked against
+  GitHub before the entry is touched, and a swap after which HACS does not
+  load is undone with the previous data, kept in memory for exactly that.
 
 Why this needs no maintenance window is argued in ``service_policy.py``.
 
-No Home Assistant imports, so the whole module is testable without one: the
-only HA surface it touches is ``hass.config_entries``, reached through the
-object it is handed.
+No module-level Home Assistant imports, so it is testable without one: it
+reaches ``hass.config_entries`` through the object it is handed, and HA's
+shared HTTP session through ``_session``, imported only when used.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -50,6 +54,19 @@ _PREFIXES = ("github_pat_", "ghp_")
 _MIN_LENGTH = 20
 _MAX_LENGTH = 255
 _TOKEN_CHARS = re.compile(r"[A-Za-z0-9_]+")
+
+# Public, and ours: any token that can read public repositories can read it,
+# so a 200 here means the token authenticates and HACS will be able to use it.
+VERIFY_URL = "https://api.github.com/repos/kaboomAE/dartec-ha-manager"
+VERIFY_TIMEOUT_S = 15
+
+# After a reload, how long HACS gets to reach LOADED, and how often to look.
+LOAD_TIMEOUT_S = 60
+LOAD_POLL_S = 1.0
+
+VERIFIED = "verified"
+REJECTED = "token_rejected"
+UNREACHABLE = "github_unreachable"
 
 
 def fingerprint(token: str) -> str:
@@ -86,17 +103,120 @@ def snapshot_section(hass) -> dict:
     return {"token_fingerprint": current_fingerprint(hass)}
 
 
-def _refuse(reason: str, detail: str) -> dict:
-    return {"ok": False, "reason": reason, "detail": detail}
+# --- Verifying a token before it goes anywhere near the entry ------------------
+
+def _session(hass):
+    """Home Assistant's shared aiohttp session."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    return async_get_clientsession(hass)
+
+
+def classify_github_response(status: int, headers: Any, body: str) -> str:
+    """What one answer from GitHub says about the token.
+
+    Only a rejection *of the token* is `token_rejected`. Rate limiting and
+    GitHub's own trouble are `github_unreachable`: the token may be fine, and
+    the manager tries again later. `body` is inspected, never returned or
+    logged.
+    """
+    if status == 200:
+        return VERIFIED
+    if status == 429 or status >= 500:
+        return UNREACHABLE
+    if status == 403:
+        headers = headers or {}
+        remaining = (headers.get("X-RateLimit-Remaining")
+                     or headers.get("x-ratelimit-remaining"))
+        if remaining == "0" or "rate limit" in (body or "").lower():
+            return UNREACHABLE
+    # 401 (bad credentials), any other 403, 404 and the rest: a token that
+    # cannot read a public repository is no use to HACS, whatever the reason.
+    return REJECTED
+
+
+async def verify_token(hass, token: str) -> str:
+    """One authenticated request to GitHub with the new token. Of the request
+    and its answer, only the verdict is ever logged."""
+    async def _ask() -> str:
+        session = _session(hass)
+        async with session.get(
+                VERIFY_URL,
+                headers={"Authorization": f"Bearer {token}",
+                         "Accept": "application/vnd.github+json",
+                         "X-GitHub-Api-Version": "2022-11-28"},
+                timeout=VERIFY_TIMEOUT_S) as resp:
+            body = await resp.text() if resp.status == 403 else ""
+            return classify_github_response(resp.status, resp.headers, body)
+
+    try:
+        # Belt and braces over the session's own timeout: a hung check must
+        # not hold the command, and a timeout changes nothing.
+        verdict = await asyncio.wait_for(_ask(), VERIFY_TIMEOUT_S + 5)
+    except Exception as err:  # noqa: BLE001 — network trouble is not a verdict
+        _LOGGER.info("Could not reach GitHub to check the new HACS token (%s)",
+                     type(err).__name__)
+        return UNREACHABLE
+    if verdict != VERIFIED:
+        _LOGGER.info("GitHub did not accept the new HACS token (%s)", verdict)
+    return verdict
+
+
+# --- Swapping, with a way back -------------------------------------------------
+
+def _is_loaded(entry) -> bool:
+    """ConfigEntryState.LOADED, compared by value so no HA import is needed."""
+    state = getattr(entry, "state", None)
+    return getattr(state, "value", state) == "loaded"
+
+
+async def _wait_loaded(entry) -> bool:
+    waited = 0.0
+    while not _is_loaded(entry):
+        if waited >= LOAD_TIMEOUT_S:
+            return False
+        await asyncio.sleep(LOAD_POLL_S)
+        waited += LOAD_POLL_S
+    return True
+
+
+async def _apply(hass, entry, data: dict) -> str | None:
+    """Write `data`, reload, and wait for HACS to load. None on success, or
+    which step failed — by exception type only, since a message can echo the
+    data it was given, and the data holds a token."""
+    try:
+        # HA replaces `data` wholesale, so the caller passes every key.
+        hass.config_entries.async_update_entry(entry, data=data)
+    except Exception as err:  # noqa: BLE001
+        return f"the entry update failed ({type(err).__name__})"
+    try:
+        # HACS reads the token once, at setup; a new one is in use only after
+        # the entry reloads.
+        await hass.config_entries.async_reload(entry.entry_id)
+    except Exception as err:  # noqa: BLE001
+        return f"the reload failed ({type(err).__name__})"
+    if not await _wait_loaded(entry):
+        return f"HACS did not load within {LOAD_TIMEOUT_S}s"
+    return None
+
+
+def _refuse(reason: str, detail: str, **extra: Any) -> dict:
+    return {"ok": False, "reason": reason, "detail": detail, **extra}
 
 
 async def hacs_token_set(hass, cmd: dict[str, Any]) -> dict:
-    """Replace the GitHub token in the existing HACS entry.
+    """Replace the GitHub token in the existing HACS entry, never with a worse one.
 
-    The command carries the token and its fingerprint. The fingerprint is
-    checked against the token rather than trusted: a token damaged in transit
-    or pasted wrongly on the manager is refused here instead of being written
-    into a working HACS entry and breaking it.
+    In order, stopping at the first thing that is not right:
+
+    1. It is a GitHub token and matches its fingerprint (`invalid_token`).
+    2. HACS is set up on this home; this never creates it (`no_hacs_entry`).
+    3. GitHub accepts the token (`token_rejected`), or cannot be asked right
+       now (`github_unreachable`). Either way the entry is untouched.
+    4. Only the token changes, HACS reloads, and it reaches LOADED. If any of
+       that fails, the previous data — held in memory, written nowhere else —
+       goes back and HACS reloads again (`rolled_back`). Only when that fails
+       too is the answer `reload_failed`.
     """
     token = cmd.get("token")
     claimed = cmd.get("fingerprint")
@@ -112,39 +232,63 @@ async def hacs_token_set(hass, cmd: dict[str, Any]) -> dict:
         # consent; this command only maintains what is already there.
         return _refuse("no_hacs_entry", "HACS is not set up on this home")
 
-    if entry.data.get("token") == token:
+    previous = dict(entry.data)
+    if previous.get("token") == token:
         return {"ok": True, "changed": False, "fingerprint": fp,
                 "detail": f"HACS already uses token {fp}"}
+    old = previous.get("token")
+    old_fp = fingerprint(old) if isinstance(old, str) and old else None
 
-    try:
-        # HA replaces `data` wholesale, so copy every other key across: only
-        # the token is ours to change.
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, "token": token})
-    except Exception as err:  # noqa: BLE001 — the message could echo the data
-        _LOGGER.warning("Could not update the HACS entry (%s)", type(err).__name__)
-        return _refuse("update_failed",
-                       f"Home Assistant refused the update ({type(err).__name__})")
+    verdict = await verify_token(hass, token)
+    if verdict == REJECTED:
+        return _refuse(REJECTED, "GitHub rejected the new token; HACS keeps "
+                                 "its current one", changed=False, fingerprint=fp)
+    if verdict != VERIFIED:
+        return _refuse(UNREACHABLE, "could not check the new token with GitHub; "
+                                    "nothing was changed",
+                       changed=False, fingerprint=fp)
 
-    try:
-        # HACS reads the token once, at setup; the new one is in use only
-        # after the entry reloads.
-        await hass.config_entries.async_reload(entry.entry_id)
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("HACS did not reload after its token changed (%s)",
-                        type(err).__name__)
-        return {"ok": False, "reason": "reload_failed", "changed": True,
-                "fingerprint": fp,
-                "detail": "token saved, but HACS did not reload; it takes "
-                          "effect when HACS next loads"}
+    failure = await _apply(hass, entry, {**previous, "token": token})
+    if failure is None:
+        return {"ok": True, "changed": True, "fingerprint": fp,
+                "previous_fingerprint": old_fp,
+                "detail": f"HACS now uses token {fp}"}
 
-    return {"ok": True, "changed": True, "fingerprint": fp,
-            "detail": f"HACS now uses token {fp}"}
+    _LOGGER.warning("HACS token swap failed: %s; restoring the previous token",
+                    failure)
+    rollback = await _apply(hass, entry, previous)
+    if rollback is None:
+        return _refuse("rolled_back",
+                       f"{failure}; the previous token was restored and HACS "
+                       "is loaded",
+                       changed=False, fingerprint=fp, previous_fingerprint=old_fp)
+
+    _LOGGER.warning("Restoring the previous HACS token failed too: %s", rollback)
+    return _refuse("reload_failed",
+                   f"{failure}; restoring the previous token also failed: "
+                   f"{rollback}",
+                   fingerprint=fp, previous_fingerprint=old_fp)
 
 
-def logbook_line(fp: str) -> str:
-    """The homeowner's record of a change. The fingerprint, never the token."""
-    return f"Dartec updated the HACS GitHub token (fingerprint {fp})"
+def logbook_line(result: dict) -> str | None:
+    """The homeowner's record of an attempt that touched the entry. Fingerprints
+    only, never a token; None when the entry was never touched."""
+    fp = result.get("fingerprint")
+    old = result.get("previous_fingerprint") or "none"
+    reason = result.get("reason")
+    if result.get("ok") and result.get("changed"):
+        return (f"Dartec updated the HACS GitHub token (fingerprint {fp}, "
+                f"replacing {old})")
+    if reason == "rolled_back":
+        return (f"Dartec tried to update the HACS GitHub token (fingerprint "
+                f"{fp}), but HACS did not load with it, so the previous token "
+                f"(fingerprint {old}) was restored")
+    if reason == "reload_failed":
+        return (f"Dartec tried to update the HACS GitHub token (fingerprint "
+                f"{fp}); HACS did not load, and restoring the previous token "
+                f"(fingerprint {old}) did not bring it back. HACS needs "
+                "checking")
+    return None
 
 
 HANDLERS = {"hacs_token_set": hacs_token_set}
