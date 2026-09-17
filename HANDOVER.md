@@ -52,6 +52,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `registry_cmds.py` | Areas, floors, device and entity assignment |
 | `user_cmds.py` | Home Assistant user accounts |
 | `hacs_cmds.py` | HACS install/list, **including the downgrade guard** |
+| `hacs_token.py` | The GitHub token in HACS's config entry: its fingerprint for the snapshot, and `hacs_token_set`. No HA imports |
 | `home_cmds.py` | Themes, branding, agent self-update, HA restart |
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
 | `tunnel_cmds.py` | Cloudflare tunnel setup on the home |
@@ -165,7 +166,7 @@ The full surface as of 0.10.4:
 ```
 addon_restart, addon_start, addon_stop, call_service,
 lovelace_get, lovelace_save, lovelace_create,
-hacs_install, hacs_list, theme_set, automation_create, branding_set,
+hacs_install, hacs_list, hacs_token_set, theme_set, automation_create, branding_set,
 floor_upsert, floor_delete, area_upsert, area_delete,
 devices_assign, entities_assign,
 users_list, user_create, user_update, user_set_password, user_delete,
@@ -173,6 +174,18 @@ agent_update, ha_restart,
 tunnel_status, tunnel_setup, tunnel_stop,
 backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 ```
+
+`hacs_token_set` (0.17.0) replaces the GitHub token in the home's existing
+HACS config entry — payload `{token, fingerprint}`, where the fingerprint is
+the first 16 hex characters of the token's SHA-256 and must match it. It never
+creates a HACS entry, changes only `data["token"]`, reloads HACS, and answers
+`{ok, changed, fingerprint}` or `{ok: false, reason}` (`invalid_token`,
+`no_hacs_entry`, `update_failed`, `reload_failed`). The snapshot reports
+`hacs_token: {token_fingerprint}` — its own key, because `hacs` is the
+repository list. The token itself is never in a response, a log line or the
+logbook. It is **routine** (no consent) as a proposal awaiting the owner's
+sign-off; see the comment in `service_policy.py`, where switching it to
+sensitive is one line.
 
 `maintenance_status`, `maintenance_request` and (0.16.0) `commissioning_complete`
 are answered before the consent gate, because none of them grants anything —
@@ -227,6 +240,13 @@ check.
   window does not substitute for it, and neither does `unattended_support`.
   `backup_delete` stays behind the window (0.16.0).
 
+**HACS token**
+- HACS reads its GitHub token once, at setup, so a new token only takes
+  effect when the entry reloads; `hacs_token_set` reloads it. A failed reload
+  still leaves the new token saved (`reason: reload_failed`, `changed: true`).
+- Errors from updating the entry are reported by type only: an exception
+  message can echo the data it was given, and that data holds the token.
+
 **Branding**
 - The module is fetched **once per page load**. A tab left open keeps running the
   copy that was current when it opened, so disabling branding could not reach it
@@ -260,6 +280,7 @@ check.
 | 0.10.4 | Branding removal takes effect without a refresh; downgrade protection; `frontend`/`http` dependencies declared |
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
+| 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` replaces the token in an existing HACS entry and reloads it, logbooked by fingerprint; routine pending the owner's sign-off. Unreleased |
 
 ---
 

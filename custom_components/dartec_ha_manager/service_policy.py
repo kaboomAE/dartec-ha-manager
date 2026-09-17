@@ -128,6 +128,17 @@ SENSITIVE_ACTIONS = frozenset({
     "addon_restart", "addon_start", "addon_stop",
 })
 
+# `hacs_token_set` is deliberately NOT in the set above either: it is routine.
+# It replaces the GitHub token in a HACS entry that already exists, and that
+# token is a read-only, zero-permission token for public repositories that
+# only keeps HACS under GitHub's rate limit. Swapping it cannot add a
+# repository, download or run code, or create the HACS entry (setting HACS up
+# is `integration_setup`, above), and every change is written to the home's
+# logbook by fingerprint. Rotation has to reach every home, including ones
+# nobody will open a window on. PROPOSED, awaiting the owner's sign-off: if
+# that is not given, add "hacs_token_set" to SENSITIVE_ACTIONS — that one line
+# is the whole switch.
+
 # `blueprint_install` is deliberately NOT in the set above, because whether it
 # is sensitive depends on the command rather than the action. See is_sensitive.
 
