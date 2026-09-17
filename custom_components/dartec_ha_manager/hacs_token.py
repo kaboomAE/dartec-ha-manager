@@ -21,6 +21,12 @@ everything here:
 * **Never a worse token than the home had.** The new token is checked against
   GitHub before the entry is touched, and a swap after which HACS does not
   load is undone with the previous data, kept in memory for exactly that.
+* **HACS is taken down through Home Assistant before its data changes.** HACS
+  reloads itself from an update listener, by hand and outside Home Assistant's
+  config entry state machine. Writing its entry while it is loaded starts that
+  reload, and a second reload beside it left a real HACS in `failed_unload`
+  (dartec-ha-manager#8). Unloading first also removes the listener, so the
+  write starts nothing, and the setup that follows is the only one.
 
 Why this needs no maintenance window is argued in ``service_policy.py``.
 
@@ -60,13 +66,16 @@ _TOKEN_CHARS = re.compile(r"[A-Za-z0-9_]+")
 VERIFY_URL = "https://api.github.com/repos/kaboomAE/dartec-ha-manager"
 VERIFY_TIMEOUT_S = 15
 
-# After a reload, how long HACS gets to reach LOADED, and how often to look.
-LOAD_TIMEOUT_S = 60
+# After a setup, how long HACS gets to reach LOADED, and how often to look. A
+# swap and its rollback have to fit inside the manager's command timeout.
+LOAD_TIMEOUT_S = 30
 LOAD_POLL_S = 1.0
 
 VERIFIED = "verified"
 REJECTED = "token_rejected"
 UNREACHABLE = "github_unreachable"
+BUSY = "hacs_busy"
+NOT_LOADED = "hacs_not_loaded"
 
 
 def fingerprint(token: str) -> str:
@@ -164,10 +173,22 @@ async def verify_token(hass, token: str) -> str:
 
 # --- Swapping, with a way back -------------------------------------------------
 
-def _is_loaded(entry) -> bool:
-    """ConfigEntryState.LOADED, compared by value so no HA import is needed."""
+def _state(entry) -> str | None:
+    """The entry's ConfigEntryState by value, so no HA import is needed."""
     state = getattr(entry, "state", None)
-    return getattr(state, "value", state) == "loaded"
+    return getattr(state, "value", state)
+
+
+def _is_loaded(entry) -> bool:
+    return _state(entry) == "loaded"
+
+
+def _hacs_busy(hass) -> bool:
+    """HACS refuses to unload while its queue has work (a download, say), and
+    Home Assistant marks a refused unload `failed_unload`, which only a restart
+    clears. So a swap never starts while HACS is busy."""
+    queue = getattr((getattr(hass, "data", None) or {}).get(HACS_DOMAIN), "queue", None)
+    return bool(getattr(queue, "has_pending_tasks", False))
 
 
 async def _wait_loaded(entry) -> bool:
@@ -181,20 +202,32 @@ async def _wait_loaded(entry) -> bool:
 
 
 async def _apply(hass, entry, data: dict) -> str | None:
-    """Write `data`, reload, and wait for HACS to load. None on success, or
-    which step failed — by exception type only, since a message can echo the
-    data it was given, and the data holds a token."""
+    """Unload HACS, write `data`, set HACS up, and wait for it to load. None on
+    success, or which step failed — by exception type only, since a message can
+    echo the data it was given, and the data holds a token.
+
+    Never `async_update_entry` followed by `async_reload`: the update fires
+    HACS's own reload listener, and the two reloads collide (see the module
+    docstring). Unloading through Home Assistant runs HACS's unload callbacks,
+    which remove that listener, so the write below reaches no listener."""
+    entries = hass.config_entries
+    if _state(entry) != "not_loaded":
+        try:
+            await entries.async_unload(entry.entry_id)
+        except Exception as err:  # noqa: BLE001
+            return f"the unload failed ({type(err).__name__})"
+        if _state(entry) != "not_loaded":
+            return f"HACS did not unload (it is {_state(entry)})"
     try:
         # HA replaces `data` wholesale, so the caller passes every key.
-        hass.config_entries.async_update_entry(entry, data=data)
+        entries.async_update_entry(entry, data=data)
     except Exception as err:  # noqa: BLE001
         return f"the entry update failed ({type(err).__name__})"
     try:
-        # HACS reads the token once, at setup; a new one is in use only after
-        # the entry reloads.
-        await hass.config_entries.async_reload(entry.entry_id)
+        # HACS reads the token once, at setup.
+        await entries.async_setup(entry.entry_id)
     except Exception as err:  # noqa: BLE001
-        return f"the reload failed ({type(err).__name__})"
+        return f"the setup failed ({type(err).__name__})"
     if not await _wait_loaded(entry):
         return f"HACS did not load within {LOAD_TIMEOUT_S}s"
     return None
@@ -213,10 +246,13 @@ async def hacs_token_set(hass, cmd: dict[str, Any]) -> dict:
     2. HACS is set up on this home; this never creates it (`no_hacs_entry`).
     3. GitHub accepts the token (`token_rejected`), or cannot be asked right
        now (`github_unreachable`). Either way the entry is untouched.
-    4. Only the token changes, HACS reloads, and it reaches LOADED. If any of
-       that fails, the previous data — held in memory, written nowhere else —
-       goes back and HACS reloads again (`rolled_back`). Only when that fails
-       too is the answer `reload_failed`.
+    4. HACS is loaded (`hacs_not_loaded`) and not in the middle of work
+       (`hacs_busy`), since taking it down then is what cannot be undone
+       without a restart. Nothing is touched; the manager tries again later.
+    5. HACS unloads, only the token changes, HACS is set up again and reaches
+       LOADED. If any of that fails, the previous data — held in memory,
+       written nowhere else — goes back the same way (`rolled_back`). Only
+       when that fails too is the answer `reload_failed`.
     """
     token = cmd.get("token")
     claimed = cmd.get("fingerprint")
@@ -246,6 +282,15 @@ async def hacs_token_set(hass, cmd: dict[str, Any]) -> dict:
     if verdict != VERIFIED:
         return _refuse(UNREACHABLE, "could not check the new token with GitHub; "
                                     "nothing was changed",
+                       changed=False, fingerprint=fp)
+
+    # Checked after GitHub, which can take seconds, so the answer is current.
+    if not _is_loaded(entry):
+        return _refuse(NOT_LOADED, f"HACS is not loaded (it is {_state(entry)}); "
+                                   "nothing was changed",
+                       changed=False, fingerprint=fp)
+    if _hacs_busy(hass):
+        return _refuse(BUSY, "HACS has work in progress; nothing was changed",
                        changed=False, fingerprint=fp)
 
     failure = await _apply(hass, entry, {**previous, "token": token})

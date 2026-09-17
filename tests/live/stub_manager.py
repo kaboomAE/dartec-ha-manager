@@ -11,10 +11,13 @@ written under STATE_DIR, which the driver reads back with `docker exec`.
 
 After the first snapshot it asks for the device registry through
 `registry_query`, the command that pages the live registry rather than the
-snapshot's capped copy, so both paths through `registry_access` run.
+snapshot's capped copy, so both paths through `registry_access` run. Once that
+is answered it rotates the HACS token with `hacs_token_set`, the way the real
+manager pushes one, against the stand-in HACS in `hacs_stub/`.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,6 +27,16 @@ from aiohttp import WSMsgType, web
 TOKEN = os.environ.get("DARTEC_LIVE_TOKEN", "live-test-pairing-token")
 PORT = int(os.environ.get("DARTEC_LIVE_PORT", "8765"))
 STATE_DIR = Path(os.environ.get("DARTEC_LIVE_STATE", "/tmp/dartec-live"))
+
+# Shaped like fine-grained tokens, and obviously not real ones. The driver sets
+# the stand-in HACS up with OLD; the push replaces it with NEW.
+HACS_OLD_TOKEN = "github_pat_11LIVETESTOLD0000000000_" + "o" * 59
+HACS_NEW_TOKEN = "github_pat_11LIVETESTNEW0000000000_" + "n" * 59
+
+
+def fingerprint(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
 
 INFO = {"instance_id": "live-test-home", "customer_name": "Live test",
         "instance_name": "Integration rig"}
@@ -72,6 +85,10 @@ async def agent_ws(request):
                                     "limit": 10000})
         elif data.get("type") == "command_result":
             _write(f"result-{data.get('id')}.json", data)
+            if data.get("id") == "devices":
+                await ws.send_json({"type": "command", "id": "hacs-swap",
+                                    "action": "hacs_token_set", "token": HACS_NEW_TOKEN,
+                                    "fingerprint": fingerprint(HACS_NEW_TOKEN)})
     return ws
 
 

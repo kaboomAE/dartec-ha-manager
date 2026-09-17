@@ -77,16 +77,38 @@ class FakeEntry:
         self.state = types.SimpleNamespace(value="loaded")
 
 
-class FakeEntries:
-    """Config entries, where HACS loads or not depending on the token it has."""
+def _set_state(entry, value):
+    entry.state = types.SimpleNamespace(value=value)
 
-    def __init__(self, entries):
+
+class FakeEntries:
+    """Config entries as Home Assistant runs them, with HACS's habits.
+
+    HACS registers an update listener that reloads it by hand, so a write to
+    its entry while it is loaded starts a second reload beside any the caller
+    makes, which is what left a real HACS in `failed_unload`
+    (dartec-ha-manager#8). The listener is counted, and any reload it starts
+    breaks the entry here the way it did there. Unloading through Home
+    Assistant removes the listener, as HACS registers it with
+    `async_on_unload`. A refused unload is `failed_unload`, from which nothing
+    but a restart recovers, and setup is only allowed from `not_loaded`.
+    """
+
+    def __init__(self, entries, hass):
         self._entries = entries
+        self._hass = hass
         self.updates = []
-        self.reloads = []
+        self.unloads = []
+        self.setups = []
+        self.listener_reloads = 0
         self.fail_update_with = None     # token whose write raises
-        self.fail_reload_with = None     # token whose reload raises
-        self.never_loads_with = set()    # tokens HACS reloads with but never loads
+        self.fail_setup_with = None      # token whose setup raises
+        self.never_loads_with = set()    # tokens HACS is set up with but never loads
+        for entry in entries:
+            entry.listening = entry.domain == "hacs" and entry.state.value == "loaded"
+
+    def _entry(self, entry_id):
+        return next(e for e in self._entries if e.entry_id == entry_id)
 
     def async_entries(self, domain):
         return [e for e in self._entries if e.domain == domain]
@@ -101,17 +123,39 @@ class FakeEntries:
             entry.data = dict(data)
         if options is not None:
             entry.options = dict(options)
+        if getattr(entry, "listening", False):
+            self.listener_reloads += 1
+            _set_state(entry, "failed_unload")
 
     async def async_reload(self, entry_id):
-        entry = next(e for e in self._entries if e.entry_id == entry_id)
-        token = entry.data.get("token")
-        self.reloads.append(token)
-        if token == self.fail_reload_with:
-            entry.state = types.SimpleNamespace(value="setup_error")
-            raise RuntimeError(f"reload failed for {token}")
-        entry.state = types.SimpleNamespace(
-            value="setup_retry" if token in self.never_loads_with else "loaded")
+        raise AssertionError("a swap must not reload HACS: it races HACS's own listener")
+
+    async def async_unload(self, entry_id):
+        entry = self._entry(entry_id)
+        self.unloads.append(entry.data.get("token"))
+        if entry.state.value == "failed_unload":
+            raise RuntimeError("OperationNotAllowed")
+        if getattr(self._hass.data.get("hacs"), "queue", None) and \
+                self._hass.data["hacs"].queue.has_pending_tasks:
+            _set_state(entry, "failed_unload")
+            return False
+        entry.listening = False
+        _set_state(entry, "not_loaded")
         return True
+
+    async def async_setup(self, entry_id):
+        entry = self._entry(entry_id)
+        token = entry.data.get("token")
+        self.setups.append(token)
+        if entry.state.value != "not_loaded":
+            raise RuntimeError("OperationNotAllowed")
+        if token == self.fail_setup_with:
+            _set_state(entry, "setup_error")
+            raise RuntimeError(f"setup failed for {token}")
+        loads = token not in self.never_loads_with
+        _set_state(entry, "loaded" if loads else "setup_retry")
+        entry.listening = loads
+        return loads
 
 
 class FakeBus:
@@ -129,7 +173,7 @@ class FakeHass:
         entries = [FakeEntry(maintenance.DOMAIN, options=options)]
         if hacs:
             entries.append(FakeEntry("hacs", data=hacs_data))
-        self.config_entries = FakeEntries(entries)
+        self.config_entries = FakeEntries(entries, self)
 
     def hacs(self):
         return self.config_entries.async_entries("hacs")[0]
@@ -326,7 +370,7 @@ class TestVerification:
         result = send(hass, token=TOKEN, fingerprint=FP)
         assert result["ok"] is False and result["reason"] == "token_rejected"
         assert hass.hacs().data["token"] == OLD_TOKEN
-        assert hass.config_entries.updates == [] and hass.config_entries.reloads == []
+        assert hass.config_entries.updates == [] and hass.config_entries.unloads == []
         assert hass.logbook() == []
 
     @pytest.mark.parametrize("failure", [
@@ -339,7 +383,7 @@ class TestVerification:
         result = send(hass, token=TOKEN, fingerprint=FP)
         assert result["ok"] is False and result["reason"] == "github_unreachable"
         assert hass.hacs().data["token"] == OLD_TOKEN
-        assert hass.config_entries.updates == [] and hass.config_entries.reloads == []
+        assert hass.config_entries.updates == [] and hass.config_entries.unloads == []
 
     @pytest.mark.parametrize("status, headers, body", [
         (500, {}, ""), (502, {}, ""), (503, {}, ""),
@@ -373,7 +417,7 @@ class TestSwap:
         assert result["ok"] is True and result["changed"] is False
         assert result["fingerprint"] == FP
         assert hass.config_entries.updates == []
-        assert hass.config_entries.reloads == []
+        assert hass.config_entries.unloads == [] and hass.config_entries.setups == []
         assert hass.logbook() == []
 
     def test_a_verified_token_replaces_only_the_token_and_hacs_loads(self):
@@ -385,7 +429,41 @@ class TestSwap:
         assert hass.hacs().data == {**data, "token": TOKEN}
         assert hass.config_entries.updates == [
             {"data": {**data, "token": TOKEN}, "options": None}]
-        assert hass.config_entries.reloads == [TOKEN]
+        assert hass.config_entries.unloads == [OLD_TOKEN]
+        assert hass.config_entries.setups == [TOKEN]
+        assert hass.hacs().state.value == "loaded"
+
+    def test_the_write_never_reaches_hacs_s_own_reload_listener(self):
+        """dartec-ha-manager#8: on a real HACS, writing the entry while it was
+        loaded set off HACS's reload beside the agent's, and HACS ended up in
+        failed_unload until Home Assistant restarted."""
+        hass = FakeHass({"token": OLD_TOKEN})
+        result = send(hass, token=TOKEN, fingerprint=FP)
+        assert result["ok"] is True
+        assert hass.config_entries.listener_reloads == 0
+
+    def test_never_while_hacs_has_work_in_progress(self):
+        """HACS refuses to unload with a queue, and a refused unload is
+        failed_unload until a restart, so the swap does not start."""
+        hass = FakeHass({"token": OLD_TOKEN})
+        hass.data["hacs"] = types.SimpleNamespace(
+            queue=types.SimpleNamespace(has_pending_tasks=True))
+        result = send(hass, token=TOKEN, fingerprint=FP)
+        assert result["ok"] is False and result["reason"] == "hacs_busy"
+        assert result["changed"] is False
+        assert hass.config_entries.unloads == [] and hass.config_entries.updates == []
+        assert hass.hacs().state.value == "loaded"
+        assert hass.logbook() == []
+
+    @pytest.mark.parametrize("state", ["failed_unload", "setup_retry", "not_loaded"])
+    def test_never_when_hacs_is_not_loaded(self, state):
+        hass = FakeHass({"token": OLD_TOKEN})
+        _set_state(hass.hacs(), state)
+        result = send(hass, token=TOKEN, fingerprint=FP)
+        assert result["ok"] is False and result["reason"] == "hacs_not_loaded"
+        assert hass.config_entries.unloads == [] and hass.config_entries.updates == []
+        assert hass.hacs().data["token"] == OLD_TOKEN
+        assert hass.logbook() == []
 
     def test_the_swap_is_in_the_home_s_logbook_by_fingerprint(self):
         hass = FakeHass({"token": OLD_TOKEN})
@@ -401,8 +479,8 @@ class TestSwap:
 
     def test_needs_no_consent(self):
         """Routine: no window, no commissioning, no standing opt-in. The
-        proposal awaiting sign-off — see service_policy.py. If the owner
-        decides otherwise, this test flips with the one-line change there."""
+        owner's decision of 2026-09-17 — see service_policy.py. Reversing it
+        is the one-line change there, and this test flips with it."""
         from dartec_ha_manager.service_policy import SENSITIVE_ACTIONS, is_sensitive
 
         hass = FakeHass({"token": OLD_TOKEN}, options={})
@@ -416,13 +494,13 @@ class TestSwap:
 
 class TestRollback:
 
-    @pytest.mark.parametrize("how", ["reload_raises", "never_loads", "update_raises"])
+    @pytest.mark.parametrize("how", ["setup_raises", "never_loads", "update_raises"])
     def test_a_failed_swap_restores_the_previous_token(self, how):
         data = {"token": OLD_TOKEN, "experimental": True}
         hass = FakeHass(data)
         entries = hass.config_entries
-        if how == "reload_raises":
-            entries.fail_reload_with = TOKEN
+        if how == "setup_raises":
+            entries.fail_setup_with = TOKEN
         elif how == "never_loads":
             entries.never_loads_with = {TOKEN}
         else:
@@ -433,13 +511,14 @@ class TestRollback:
         assert result["ok"] is False and result["reason"] == "rolled_back"
         assert result["changed"] is False
         assert hass.hacs().data == data                 # every key, as it was
-        assert hass.config_entries.reloads[-1] == OLD_TOKEN
+        assert hass.config_entries.setups[-1] == OLD_TOKEN
+        assert hass.config_entries.listener_reloads == 0
         assert hass.hacs().state.value == "loaded"
         assert hacs_token.snapshot_section(hass) == {"token_fingerprint": OLD_FP}
 
     def test_a_rollback_is_in_the_logbook_by_fingerprint(self):
         hass = FakeHass({"token": OLD_TOKEN})
-        hass.config_entries.fail_reload_with = TOKEN
+        hass.config_entries.fail_setup_with = TOKEN
         send(hass, token=TOKEN, fingerprint=FP)
         [line] = hass.logbook()
         assert FP in line and OLD_FP in line and "restored" in line
@@ -460,7 +539,7 @@ class TestTheTokenStaysInTheEntry:
 
     @pytest.mark.parametrize("scenario", [
         "changed", "unchanged", "bad_fingerprint", "no_entry", "rejected",
-        "unreachable", "update_raises", "reload_raises", "rollback_fails",
+        "unreachable", "update_raises", "setup_raises", "rollback_fails",
     ])
     def test_not_in_the_response_logs_or_logbook(self, scenario, caplog, github):
         caplog.set_level(logging.DEBUG)
@@ -474,10 +553,10 @@ class TestTheTokenStaysInTheEntry:
             github.raises = OSError(f"could not connect with {TOKEN}")
         if scenario == "update_raises":
             entries.fail_update_with = TOKEN
-        if scenario == "reload_raises":
-            entries.fail_reload_with = TOKEN
+        if scenario == "setup_raises":
+            entries.fail_setup_with = TOKEN
         if scenario == "rollback_fails":
-            entries.fail_reload_with = TOKEN
+            entries.fail_setup_with = TOKEN
             entries.never_loads_with = {OLD_TOKEN}
 
         result = send(hass, token=TOKEN, fingerprint=fingerprint)
