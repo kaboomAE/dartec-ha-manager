@@ -16,6 +16,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .hacs_token import hacs_token_set
 from .version import is_older, parse
 from .ws_bridge import call_own_ws
 
@@ -178,4 +179,5 @@ async def hacs_list(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return {"ok": True, "repositories": repos, "detail": f"{len(repos)} installed"}
 
 
-HANDLERS = {"hacs_install": hacs_install, "hacs_list": hacs_list}
+HANDLERS = {"hacs_install": hacs_install, "hacs_list": hacs_list,
+            "hacs_token_set": hacs_token_set}

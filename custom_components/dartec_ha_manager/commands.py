@@ -175,6 +175,16 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             # point of the logbook.
             maintenance.logbook(hass, f"Dartec staged automation blueprint "
                                       f"'{result.get('path')}'; nothing uses it yet")
+        elif action == "hacs_token_set":
+            # Routine, so no consent line above — but a credential in their
+            # house changed, or was changed and put back, and they should be
+            # able to see that. Fingerprints only: the token is never written
+            # anywhere. Refusals before the entry was touched are not logged.
+            from .hacs_token import logbook_line
+
+            line = logbook_line(result)
+            if line:
+                maintenance.logbook(hass, line)
         return result
     except Exception as err:  # noqa: BLE001 — always answer the cloud, never raise
         _LOGGER.warning("Command %s failed: %s", action, err)

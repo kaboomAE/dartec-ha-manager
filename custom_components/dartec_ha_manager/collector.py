@@ -15,7 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import signal_health
+from . import hacs_token, signal_health
 from .const import DOMAIN
 from .hardware import async_collect_hardware
 from .registry_access import all_devices
@@ -48,6 +48,10 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # nothing else in this snapshot states outright.
     snapshot["notify_targets"] = _collect_notify_targets(hass)
     snapshot["hacs"] = _collect_hacs(hass)
+    # Which GitHub token HACS holds, as a fingerprint, so the manager can see
+    # which homes still need the current one without asking each of them.
+    # Its own key: `hacs` above is the list of repositories.
+    snapshot[hacs_token.SNAPSHOT_KEY] = _collect_hacs_token(hass)
     snapshot["backup"] = await _collect_backup(hass)
     snapshot["entity_count"] = len(hass.states.async_entity_ids())
     # Whether this home is still being commissioned, and until when. The
@@ -395,6 +399,15 @@ def _collect_logs(hass: HomeAssistant) -> tuple[list[dict], int]:
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("logs collect failed: %s", err)
     return records, out_total
+
+
+def _collect_hacs_token(hass: HomeAssistant) -> dict:
+    """Never the token: its fingerprint, or null without HACS or a token."""
+    try:
+        return hacs_token.snapshot_section(hass)
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("hacs token collect failed: %s", type(err).__name__)
+        return {"token_fingerprint": None}
 
 
 def _collect_hacs(hass: HomeAssistant) -> list[dict]:

@@ -54,7 +54,12 @@ install rather than a number somebody remembered to update in two places.
 
     Once commissioning ends, access is closed until you switch it on again.
   - **Routine** — reversible commissioning and diagnostic calls, which need no
-    window.
+    window. Replacing the read-only GitHub token HACS uses (so Dartec can
+    rotate it across every home) is routine too: it only ever changes the
+    token in a HACS setup you already have, checks the new token with GitHub
+    first, puts the old one back if HACS does not start with the new one, and
+    is written to your logbook. It does not touch this integration's own
+    connection to Dartec. The token itself is never reported back or logged.
 - **Offsite backup copies** send your configuration and history to Dartec's
   storage, so they only run if you turn on *Copy backups offsite to Dartec* in
   this integration's options. It is off by default, and you can turn it off
