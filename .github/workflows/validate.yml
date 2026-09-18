@@ -5,6 +5,7 @@
 # - HACS action: validates the repo is HACS-installable.
 # - live: the agent from this commit, paired to a stub manager inside real
 #   Home Assistant containers — see tests/live/run_live.py.
+# - live-household: "My Home", the household panel, as several real people.
 # - live-update: guarded Core/OS updates inside real Home Assistant, with a
 #   stand-in Supervisor; each update, rollback and restore really restarts
 #   Home Assistant — see tests/live/run_live_update.py. About five minutes.
@@ -76,6 +77,30 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-${{ matrix.version }}
+          path: live-artifacts
+          if-no-files-found: ignore
+
+  live-household:
+    # "My Home", the household panel, driven as several real people in real
+    # Home Assistant - see tests/live/run_live_household.py. About a minute a
+    # version once the image is pulled.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.8.3", "2026.9.2", "stable", "beta"]' || '["2026.8.3", "2026.9.2"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      - run: python tests/live/run_live_household.py ${{ matrix.version }} --artifacts live-artifacts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-household-${{ matrix.version }}
           path: live-artifacts
           if-no-files-found: ignore
 

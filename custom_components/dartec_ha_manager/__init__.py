@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from . import ha_update, maintenance
+from . import ha_update, household_ws, maintenance
 from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
@@ -28,6 +28,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await maintenance.async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # "My Home": the homeowner's own screen for the people in the house. It
+    # runs entirely inside the home, under Home Assistant's own sign-in; the
+    # cloud has no way into it. See household.py for why it lives here.
+    await household_ws.async_setup(hass)
     # Commissioning is stored in the entry, so it outlives the restarts an
     # install is full of; this re-arms the timer that turns the switch off at
     # the cap, which is the one part of it that lived in memory.
@@ -49,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    household_ws.async_unload(hass)
     await maintenance.async_unregister_services(hass)
     link: CloudLink | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if link:
