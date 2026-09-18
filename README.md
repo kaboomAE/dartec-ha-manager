@@ -27,6 +27,7 @@ install rather than a number somebody remembered to update in two places.
 
 - Opens a single **outbound** encrypted WebSocket to the Dartec cloud — no port forwarding, no VPN, no exposed services.
 - Sends a health snapshot every 60 seconds: HA version, integrations and their states, add-ons (HA OS), HACS repositories, automations, dashboards, critical logs, host metrics, battery levels, and devices that have stopped answering (summarised on the home — see `device_health.py` for what counts as offline, and label a device `Dartec expected offline` in Home Assistant to leave it out).
+- Adds **My Home** to the sidebar for the people who manage the home: add family and guests, set a new password, pause or remove someone, and choose the dashboard each person sees first, in English or Arabic. It works entirely inside your home, under your own Home Assistant sign-in; Dartec cannot use it and only learns how many people have each role. See the [My Home guide](docs/my-home/README.md).
 - Executes a small **allowlisted** set of remote commands. The allowlist is
   enforced inside the agent, on the `domain.service` pair rather than on the
   command name, and the default is to refuse. Three tiers:

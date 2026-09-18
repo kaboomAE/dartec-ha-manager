@@ -69,6 +69,16 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
         _LOGGER.debug("commissioning collect failed: %s", err)
     snapshot.update(_collect_registries(hass))
+    # How many people can sign in, by role: enough for staff to see a home
+    # has been set up, and nothing more. Names, usernames and ids are the
+    # customer's and stay in the house (see household.py).
+    try:
+        from .household_ws import household_counts, user_dict
+
+        snapshot["household"] = household_counts(
+            hass, [user_dict(u) for u in await hass.auth.async_get_users()])
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("household collect failed: %s", err)
 
     # Host metrics: psutil reads /proc, which is host-wide even inside the HA
     # container — so CPU/memory/uptime are true SYSTEM usage on every install
