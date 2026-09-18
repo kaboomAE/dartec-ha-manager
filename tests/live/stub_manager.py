@@ -14,6 +14,12 @@ After the first snapshot it asks for the device registry through
 snapshot's capped copy, so both paths through `registry_access` run. Once that
 is answered it rotates the HACS token with `hacs_token_set`, the way the real
 manager pushes one, against the stand-in HACS in `hacs_stub/`.
+
+With DARTEC_LIVE_SCENARIO=update (run_live_update.py) it sends nothing on its
+own. Instead the driver drops commands into STATE_DIR as `send-<id>.json`, and
+each is sent once, on the next snapshot. The latest snapshot is also kept as
+`snapshot-latest.json`, because a guarded update is followed through the
+snapshots, not through its command's reply.
 """
 from __future__ import annotations
 
@@ -27,6 +33,7 @@ from aiohttp import WSMsgType, web
 TOKEN = os.environ.get("DARTEC_LIVE_TOKEN", "live-test-pairing-token")
 PORT = int(os.environ.get("DARTEC_LIVE_PORT", "8765"))
 STATE_DIR = Path(os.environ.get("DARTEC_LIVE_STATE", "/tmp/dartec-live"))
+SCENARIO = os.environ.get("DARTEC_LIVE_SCENARIO", "")
 
 # Shaped like fine-grained tokens, and obviously not real ones. The driver sets
 # the stand-in HACS up with OLD; the push replaces it with NEW.
@@ -59,6 +66,13 @@ async def validate(request):
     return web.json_response(INFO)
 
 
+async def send_outbox(ws) -> None:
+    for path in sorted(STATE_DIR.glob("send-*.json")):
+        command = json.loads(path.read_text())
+        path.replace(path.with_suffix(".sent"))
+        await ws.send_json({"type": "command", **command})
+
+
 async def agent_ws(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
@@ -78,6 +92,10 @@ async def agent_ws(request):
         if data.get("type") == "snapshot":
             snapshots += 1
             _write(f"snapshot-{snapshots}.json", data.get("data"))
+            _write("snapshot-latest.json", data.get("data"))
+            if SCENARIO == "update":
+                await send_outbox(ws)
+                continue
             if not asked:
                 asked = True
                 await ws.send_json({"type": "command", "id": "devices",
@@ -85,6 +103,8 @@ async def agent_ws(request):
                                     "limit": 10000})
         elif data.get("type") == "command_result":
             _write(f"result-{data.get('id')}.json", data)
+            if SCENARIO == "update":
+                continue
             if data.get("id") == "devices":
                 await ws.send_json({"type": "command", "id": "hacs-swap",
                                     "action": "hacs_token_set", "token": HACS_NEW_TOKEN,

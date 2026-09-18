@@ -33,8 +33,8 @@ from homeassistant.core import HomeAssistant
 
 from . import maintenance
 from .const import DOMAIN
-from .service_policy import (check_call_service, check_opt_in, check_own_entities,
-                             is_sensitive)
+from .service_policy import (GUARDED_ACTIONS, check_call_service, check_guarded,
+                             check_opt_in, check_own_entities, is_sensitive)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,11 +47,14 @@ _ADDON_ACTIONS = {
 }
 
 
-def _refuse(hass: HomeAssistant, what: str, why: str) -> dict:
+def _refuse(hass: HomeAssistant, what: str, why: str, code: str = "") -> dict:
     """Deny a command, and make sure the house knows it was attempted."""
     _LOGGER.warning("Refused %s: %s", what, why)
     maintenance.logbook(hass, f"Refused remote command '{what}': {why}")
-    return {"ok": False, "refused": True, "detail": why}
+    result = {"ok": False, "refused": True, "detail": why}
+    if code:
+        result["code"] = code
+    return result
 
 
 def _describe(cmd: dict[str, Any]) -> str:
@@ -67,6 +70,7 @@ def _describe(cmd: dict[str, Any]) -> str:
 async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str, Any]:
     from .backup_cmds import HANDLERS as BACKUP_HANDLERS
     from .blueprint_cmds import HANDLERS as BLUEPRINT_HANDLERS
+    from .ha_update import HANDLERS as HA_UPDATE_HANDLERS
     from .hacs_cmds import HANDLERS as HACS_HANDLERS
     from .helper_cmds import HANDLERS as HELPER_HANDLERS
     from .home_cmds import HANDLERS as HOME_HANDLERS
@@ -108,6 +112,21 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                 return _refuse(hass, _describe(cmd), refusal)
             result = await _call_service(hass, cmd)
             maintenance.logbook(hass, f"Dartec called {_describe(cmd)}")
+            return result
+
+        # Guarded updates need no window: the owner's decision, with its
+        # limits, is in service_policy.GUARDED_ACTIONS. They answer to the
+        # home's opt-out and to a strict shape instead, and are logged whether
+        # they run or not, with the version they were asked for.
+        if action in GUARDED_ACTIONS:
+            what = f"{action} {cmd.get('version', '')}".strip()
+            refused = check_guarded(cmd, maintenance.entry_options(hass))
+            if refused:
+                return _refuse(hass, what, refused[1], code=refused[0])
+            result = await HA_UPDATE_HANDLERS[action](hass, cmd)
+            if not result.get("ok"):
+                maintenance.logbook(hass, f"Dartec asked for '{what}'; not started: "
+                                          f"{result.get('detail')}")
             return result
 
         sensitive = is_sensitive(cmd)

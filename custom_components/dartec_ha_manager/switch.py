@@ -8,8 +8,14 @@ that says there is nothing they can do.
 
 So the same window is also a switch. On grants Dartec support the sensitive
 operations for the default period; off revokes it immediately. It appears on
-their dashboard next to their lights, and it is the only control in this
-integration a customer is ever expected to use.
+their dashboard next to their lights.
+
+A second switch, "Allow Dartec to install approved Home Assistant updates",
+is the homeowner's opt-out from guarded updates (service_policy.py,
+GUARDED_ACTIONS). It is on by default and is stored in the entry's options, so
+it survives restarts, unlike the window. Neither switch can be operated by the
+manager: calls on this integration's own entities are refused
+(``check_own_entities``).
 
 Three things worth keeping true:
 
@@ -55,11 +61,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import maintenance
 from .const import DOMAIN
+from .service_policy import OPT_GUARDED_UPDATES, guarded_enabled
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
                             async_add_entities: AddEntitiesCallback) -> None:
-    async_add_entities([MaintenanceSwitch(entry)])
+    async_add_entities([MaintenanceSwitch(entry), GuardedUpdatesSwitch(entry)])
 
 
 class MaintenanceSwitch(SwitchEntity):
@@ -122,3 +129,50 @@ class MaintenanceSwitch(SwitchEntity):
         # access open, so closing it alone would leave the switch on.
         maintenance.complete_commissioning(self.hass, "local")
         self.async_write_ha_state()
+
+
+class GuardedUpdatesSwitch(SwitchEntity):
+    """The homeowner's opt-out from approved Home Assistant updates.
+
+    On by default: the owner's decision (2026-09-18) is that security fixes
+    reach homes nobody is attending. Off stops the next update. An update
+    already under way finishes or rolls back, because an update stopped
+    half-way is worse than either end of it. Each change is written to the
+    logbook, since it changes what Dartec may do in the house.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Allow Dartec to install approved Home Assistant updates"
+    _attr_icon = "mdi:update"
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self._entry = entry
+        # Named the way someone would look for it, as with the switch above.
+        self.entity_id = "switch.dartec_approved_updates"
+        self._attr_unique_id = f"{entry.entry_id}_guarded_updates"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
+
+    @property
+    def is_on(self) -> bool:
+        return guarded_enabled(self._entry.options)
+
+    async def async_added_to_hass(self) -> None:
+        # The options form changes the same setting, and fires this signal.
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, maintenance.SIGNAL_UPDATE, self.async_write_ha_state))
+
+    async def _set(self, value: bool) -> None:
+        if guarded_enabled(self._entry.options) == value:
+            return
+        self.hass.config_entries.async_update_entry(
+            self._entry, options={**self._entry.options, OPT_GUARDED_UPDATES: value})
+        maintenance.logbook(self.hass, "Approved Home Assistant updates from Dartec "
+                                       f"turned {'on' if value else 'off'} here")
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._set(False)

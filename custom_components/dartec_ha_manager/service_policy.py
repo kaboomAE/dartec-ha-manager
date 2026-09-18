@@ -28,6 +28,12 @@ Anything absent from all three is denied. Adding a capability is therefore a
 deliberate edit here rather than a side effect of the cloud learning a new
 trick.
 
+A fourth class, **GUARDED**, is narrower than all three: an update of Home
+Assistant itself to one exact, approved version, with a backup first, a health
+check after, and a rollback if it is unhealthy. It needs no window, because
+some updates are security fixes that cannot wait for someone to be home. See
+``GUARDED_ACTIONS`` for the decision and its limits.
+
 Separately from the tiers, a few actions need a standing **opt-in** instead of
 a window (``OPT_IN_ACTIONS``). Offsite backup copies are the case: they move
 the home's whole configuration and recorder history onto Dartec storage, which
@@ -36,6 +42,7 @@ nobody at the house, which a window can never serve.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 Tier = Literal["never", "routine", "sensitive", "unlisted"]
@@ -160,6 +167,126 @@ OPT_OFFSITE_BACKUPS = "offsite_backups"
 OPT_IN_ACTIONS = {
     "backup_upload": OPT_OFFSITE_BACKUPS,
 }
+
+
+# ── Guarded updates ─────────────────────────────────────────────────────────
+#
+# The owner's decision, 2026-09-18. Before it, nothing applied a Home Assistant
+# update remotely: `ha_restart` is sensitive, and an update is a restart and
+# new code at once. But some updates are critical security fixes, and a fix
+# that waits for a homeowner to open a window reaches most homes late or
+# never. So an update of Home Assistant Core or OS runs **without a
+# maintenance window**, as its own narrow class, and only in this shape:
+#
+# * **One exact version, upgrade only.** The command carries a version and
+#   nothing else that could change what happens: any key outside the action's
+#   list below is refused, so there is no `allow_downgrade`, `force` or extra
+#   argument to slip in. The version must be a stable release (no betas) and
+#   newer than what is installed, and the agent refuses one the Supervisor
+#   does not offer on this home's update channel.
+# * **Approved on the bench first.** The manager only sends versions an admin
+#   has marked approved after a recorded bench pass, and rolls them out bench
+#   -> one pilot home -> the rest, stopping at the first failure. That part is
+#   enforced on the manager; this module enforces what a home can enforce.
+# * **Backup, update, health check, roll back.** A full backup is taken and
+#   confirmed before anything changes. After the update the home checks
+#   itself, and if it is unhealthy puts back the version it had, restoring the
+#   backup if that alone does not bring it back. The only downgrade that ever
+#   happens is that rollback, to the version this home recorded before the
+#   update, and it never arrives as a command. See ha_update.py.
+# * **Always in the logbook**, with the target version: accepted, each step,
+#   the verdict, and any refusal.
+# * **The homeowner can turn it off**, locally: the "Allow Dartec to install
+#   approved Home Assistant updates" switch, or the same setting in this
+#   integration's options (OPT_GUARDED_UPDATES). On by default, because the
+#   point is that updates reach homes nobody is attending. Off stops the next
+#   update; one already under way finishes, rollback included, because an
+#   update stopped half-way is worse than either end of it. The manager cannot
+#   switch it back on (check_own_entities).
+#
+# What it is not: a way to run code, to restart for any other reason, or to
+# install anything but Home Assistant itself. `ha_restart`, `hacs_install` and
+# the rest keep their consent requirements. Each entry below is its own
+# decision, recorded here with who made it and when.
+GUARDED_ACTIONS: dict[str, frozenset[str]] = {
+    "ha_core_update": frozenset({"version", "job_id", "rollout_id"}),
+    "ha_os_update": frozenset({"version", "job_id", "rollout_id"}),
+}
+# The transport's own keys on every command.
+_ENVELOPE_KEYS = frozenset({"type", "id", "action"})
+
+# Opt-out, not opt-in: absent means on. Only an explicit False turns it off,
+# the mirror image of check_opt_in's "only True counts": in both, only the
+# homeowner's explicit choice moves the default.
+OPT_GUARDED_UPDATES = "guarded_updates"
+
+# Stable releases only. Core is YYYY.M.patch; the OS is major.minor.
+CORE_VERSION_RE = re.compile(r"^20\d{2}\.(?:1[0-2]|[1-9])\.\d{1,3}$")
+OS_VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}$")
+GUARDED_VERSION_FORMATS = {"ha_core_update": CORE_VERSION_RE,
+                           "ha_os_update": OS_VERSION_RE}
+JOB_ID_RE = re.compile(r"^[0-9a-f]{8,32}$")
+
+
+def guarded_enabled(options: dict) -> bool:
+    return options.get(OPT_GUARDED_UPDATES) is not False
+
+
+def guarded_status(options: dict) -> dict:
+    """What `maintenance_status` reports, so the manager can tell from the
+    home's own answer whether it takes guarded updates."""
+    return {"enabled": guarded_enabled(options), "actions": sorted(GUARDED_ACTIONS)}
+
+
+def check_guarded(cmd: dict, options: dict) -> tuple[str, str] | None:
+    """(code, refusal) if a guarded command may not run, else None.
+
+    `code` is "consent" when the homeowner has turned guarded updates off,
+    which the manager treats as blocked rather than failed, and "invalid" for
+    a command that is malformed or asks for more than the class allows.
+    `options` must be the home's own config entry options.
+    """
+    action = cmd.get("action")
+    allowed = GUARDED_ACTIONS.get(action)
+    if allowed is None:
+        return None
+    if not guarded_enabled(options):
+        return ("consent", f"'{action}' is refused: the homeowner has turned off "
+                           "'Allow Dartec to install approved Home Assistant updates'.")
+    extra = sorted(set(cmd) - allowed - _ENVELOPE_KEYS)
+    if extra:
+        return ("invalid", f"'{action}' is refused: unexpected field(s) "
+                           f"{', '.join(extra)}. A guarded update carries a version "
+                           "and nothing else.")
+    pattern = GUARDED_VERSION_FORMATS.get(action)
+    if pattern is not None and not pattern.match(str(cmd.get("version") or "")):
+        return ("invalid", f"'{action}' is refused: '{cmd.get('version')}' is not an "
+                           "exact stable version.")
+    job_id = cmd.get("job_id")
+    if job_id is not None and not JOB_ID_RE.match(str(job_id)):
+        return ("invalid", f"'{action}' is refused: malformed job id.")
+    return None
+
+
+def _numbers(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", str(version)))
+
+
+def version_newer(candidate: str, than: str) -> bool:
+    left, right = _numbers(candidate), _numbers(than)
+    width = max(len(left), len(right))
+    return left + (0,) * (width - len(left)) > right + (0,) * (width - len(right))
+
+
+def check_upgrade(current: str | None, target: str) -> str | None:
+    """Refusal if `target` is not strictly newer than `current`. An unknown
+    current version is a refusal: an update we cannot compare is one we cannot
+    promise is an upgrade."""
+    if not current or not _numbers(current):
+        return "the installed version could not be read"
+    if not version_newer(target, current):
+        return f"{target} is not newer than the installed {current}; only upgrades are accepted"
+    return None
 
 
 def is_sensitive(cmd: dict) -> bool:

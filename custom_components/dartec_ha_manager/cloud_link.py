@@ -18,7 +18,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .collector import collect_snapshot
 from .commands import execute_command
-from .const import RECONNECT_MAX_S, RECONNECT_MIN_S, SNAPSHOT_INTERVAL_S
+from .const import (RECONNECT_MAX_S, RECONNECT_MIN_S, SIGNAL_SNAPSHOT_NOW,
+                    SNAPSHOT_INTERVAL_S)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,12 +31,23 @@ class CloudLink:
         self._token = pairing_token
         self._task: asyncio.Task | None = None
         self._stopping = False
+        # True while authenticated to the manager. A guarded update's health
+        # check asks it: "the agent reconnected" is one of its conditions.
+        self.connected = False
+        self._nudge = asyncio.Event()
+        self._unsub_nudge = None
 
     def start(self) -> None:
+        from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+        self._unsub_nudge = async_dispatcher_connect(
+            self._hass, SIGNAL_SNAPSHOT_NOW, self._nudge.set)
         self._task = self._hass.async_create_background_task(self._run(), name="dartec_cloud_link")
 
     async def stop(self) -> None:
         self._stopping = True
+        if self._unsub_nudge:
+            self._unsub_nudge()
         if self._task:
             self._task.cancel()
             try:
@@ -56,7 +68,11 @@ class CloudLink:
                         return  # bad token will not fix itself — stop, user must re-pair
                     _LOGGER.info("Connected to Dartec HA Manager cloud")
                     backoff = RECONNECT_MIN_S
-                    await self._snapshot_loop(ws)
+                    self.connected = True
+                    try:
+                        await self._snapshot_loop(ws)
+                    finally:
+                        self.connected = False
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
                 _LOGGER.warning("Dartec cloud link lost (%s); retrying in %ss", err, backoff)
             except asyncio.CancelledError:
@@ -78,7 +94,11 @@ class CloudLink:
                 snapshot = await collect_snapshot(self._hass)
                 async with send_lock:
                     await ws.send_json({"type": "snapshot", "data": snapshot})
-                await asyncio.sleep(SNAPSHOT_INTERVAL_S)
+                self._nudge.clear()
+                try:
+                    await asyncio.wait_for(self._nudge.wait(), SNAPSHOT_INTERVAL_S)
+                except asyncio.TimeoutError:
+                    pass
 
         async def reader() -> None:
             async for msg in ws:
