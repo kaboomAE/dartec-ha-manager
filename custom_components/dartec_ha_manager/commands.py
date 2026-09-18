@@ -32,7 +32,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import maintenance
-from .service_policy import check_call_service, check_opt_in, is_sensitive
+from .const import DOMAIN
+from .service_policy import (check_call_service, check_opt_in, check_own_entities,
+                             is_sensitive)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +101,9 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         window_open = granted["allowed"]
 
         if action == "call_service":
-            refusal = check_call_service(cmd, maintenance_open=window_open)
+            refusal = (check_call_service(cmd, maintenance_open=window_open)
+                       or check_own_entities(cmd.get("service_data") or {},
+                                             _own_entity_ids(hass)))
             if refusal:
                 return _refuse(hass, _describe(cmd), refusal)
             result = await _call_service(hass, cmd)
@@ -206,6 +210,23 @@ async def _addon_action(hass: HomeAssistant, slug: str, verb: str) -> dict:
             return {"ok": True, "detail": f"{verb} {slug} succeeded"}
         body = await resp.text()
         return {"ok": False, "detail": f"Supervisor returned {resp.status}: {body[:200]}"}
+
+
+# Always treated as ours, even if the registry cannot be read.
+_KNOWN_OWN_ENTITIES = ("switch.allow_dartec_support",)
+
+
+def _own_entity_ids(hass: HomeAssistant) -> set[str]:
+    """Every entity this integration created, by its current entity id."""
+    own = set(_KNOWN_OWN_ENTITIES)
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        own.update(e.entity_id for e in er.async_get(hass).entities.values()
+                   if e.platform == DOMAIN)
+    except Exception as err:  # noqa: BLE001 — the fixed list above still applies
+        _LOGGER.debug("entity registry unreadable for own-entity check: %s", err)
+    return own
 
 
 async def _call_service(hass: HomeAssistant, cmd: dict) -> dict:

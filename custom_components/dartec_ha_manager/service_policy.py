@@ -238,6 +238,20 @@ def _targets(service_data: dict[str, Any]) -> list[str]:
     return found
 
 
+# Keys by which Home Assistant targets entities without naming them. It
+# expands each one alongside any `entity_id`, so a harmless entity can satisfy
+# the "must name an entity" rule below while an area does the real targeting —
+# including an area holding this integration's own consent switch
+# (dartec-ha-manager#11). Nothing Dartec sends needs them.
+INDIRECT_TARGET_KEYS = ("area_id", "device_id", "floor_id", "label_id")
+
+
+def _indirect_targets(service_data: dict[str, Any]) -> list[str]:
+    return [key for holder in (service_data, service_data.get("target") or {})
+            if isinstance(holder, dict)
+            for key in INDIRECT_TARGET_KEYS if key in holder]
+
+
 def validate_target(domain: str, service: str,
                     service_data: dict[str, Any]) -> str | None:
     """Reject house-wide targeting. Returns an error string, or None if fine.
@@ -247,6 +261,10 @@ def validate_target(domain: str, service: str,
     mistaken command into every light, lock or cover at once.
     """
     pair = f"{domain}.{service}"
+    indirect = _indirect_targets(service_data)
+    if indirect:
+        return (f"{pair} refused: target entities by entity_id only "
+                f"({', '.join(sorted(set(indirect)))} is not accepted)")
     if pair in NO_TARGET_SERVICES:
         return None
     entities = _targets(service_data)
@@ -279,3 +297,21 @@ def check_call_service(cmd: dict[str, Any], *, maintenance_open: bool) -> str | 
         return (f"{pair} needs an open maintenance window. Ask the homeowner to "
                 "run 'Dartec: allow maintenance' in Home Assistant.")
     return validate_target(domain, service, service_data)
+
+
+def check_own_entities(service_data: dict[str, Any], own_entity_ids) -> str | None:
+    """Refuse a call aimed at one of this integration's own entities.
+
+    They are the home's controls over Dartec: the consent switch, and any
+    opt-out beside it. `switch.turn_on` is routine for every other switch in
+    the house, and without this the cloud could switch on the very thing that
+    is supposed to be the home's to switch on (dartec-ha-manager#11).
+    `own_entity_ids` comes from the entity registry, so a renamed entity is
+    still recognised.
+    """
+    own = {str(e).strip().lower() for e in own_entity_ids}
+    hit = sorted({e.strip().lower() for e in _targets(service_data)} & own)
+    if hit:
+        return (f"refused: {', '.join(hit)} belongs to the Dartec integration and "
+                "is controlled only from this home")
+    return None
