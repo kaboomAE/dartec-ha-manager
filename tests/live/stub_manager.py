@@ -13,7 +13,8 @@ After the first snapshot it asks for the device registry through
 `registry_query`, the command that pages the live registry rather than the
 snapshot's capped copy, so both paths through `registry_access` run. Once that
 is answered it rotates the HACS token with `hacs_token_set`, the way the real
-manager pushes one, against the stand-in HACS in `hacs_stub/`.
+manager pushes one, against the stand-in HACS in `hacs_stub/`, and then reads
+the full entity inventory — registered and not — the way the manager does.
 
 With DARTEC_LIVE_SCENARIO=update (run_live_update.py) it sends nothing on its
 own. Instead the driver drops commands into STATE_DIR as `send-<id>.json`, and
@@ -109,6 +110,13 @@ async def agent_ws(request):
                 await ws.send_json({"type": "command", "id": "hacs-swap",
                                     "action": "hacs_token_set", "token": HACS_NEW_TOKEN,
                                     "fingerprint": fingerprint(HACS_NEW_TOKEN)})
+            elif data.get("id") == "hacs-swap":
+                # The manager's full inventory read: every entity, registered
+                # or not, in pages larger than the Entities tab's.
+                await ws.send_json({"type": "command", "id": "inventory",
+                                    "action": "registry_query", "kind": "entities",
+                                    "include_unregistered": True, "offset": 0,
+                                    "limit": 1000})
     return ws
 
 

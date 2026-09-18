@@ -17,6 +17,9 @@ The demo's entities are static, so a state written here stays written:
   dead device.
 - `sensor.carbon_dioxide_battery` drops to 4%: the **lowest battery**, ahead
   of the demo's own 12%.
+- `sensor.yaml_battery` is created at 7% straight in the state machine, the way
+  a YAML template battery exists: **outside the registry**, so it has no device
+  and is reported on its own, keyed `entity:sensor.yaml_battery`.
 
 Prints {"offline": [device ids], "not_offline": [...], "batteries":
 {device id: level}} for the driver.
@@ -79,6 +82,12 @@ async def main(token: str) -> None:
         await set_state("cover.kitchen_window", "unavailable")
         await set_state("sensor.outside_temperature", "unavailable")
         await set_state("sensor.carbon_dioxide_battery", "4")
+        async with session.post(f"{BASE}/api/states/sensor.yaml_battery", json={
+                "state": "7", "attributes": {"device_class": "battery",
+                                             "unit_of_measurement": "%",
+                                             "friendly_name": "YAML battery"}}) as resp:
+            if resp.status not in (200, 201):
+                raise SystemExit(f"creating sensor.yaml_battery failed: {resp.status}")
 
         # The battery truth, from Home Assistant's own states and registry:
         # every registered sensor that HA shows as a battery percentage. The
@@ -96,6 +105,13 @@ async def main(token: str) -> None:
                 level = float(state["state"])
                 device_id = entry["device_id"]
                 batteries[device_id] = min(level, batteries.get(device_id, level))
+        # And every battery percentage Home Assistant runs outside the registry.
+        for entity_id, state in states.items():
+            attributes = state.get("attributes") or {}
+            if (entity_id.startswith("sensor.") and entity_id not in entities
+                    and attributes.get("device_class") == "battery"
+                    and attributes.get("unit_of_measurement") == "%"):
+                batteries[f"entity:{entity_id}"] = float(state["state"])
 
         print(json.dumps({
             "offline": [device_of("sensor.outside_humidity")],
