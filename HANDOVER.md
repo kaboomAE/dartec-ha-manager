@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.11.0
+**Current version**: 0.17.1 released; 0.18.0 on main, unreleased
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -57,6 +57,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
 | `tunnel_cmds.py` | Cloudflare tunnel setup on the home |
 | `branding.py` | Installer branding in the sidebar and tab title, plus its config endpoint |
+| `ha_update.py` | Guarded Core/OS updates: backup, update, resume after restart, health check, rollback, restore. The job lives in a `Store` and is reported in `snapshot.ha_update`. Its policy (`GUARDED_ACTIONS`, the opt-out) is in `service_policy.py` |
 | `version.py` | Version comparison, and the agent's own running version (from HA's loader). No module-level HA imports, so CI can test it directly |
 | `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
 | `www/` | Brand SVGs served as static assets |
@@ -364,7 +365,8 @@ check.
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
 | 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. **Swapping broke HACS on a real install (#8): do not run 0.17.0 where the manager pushes tokens** |
-| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner. Unreleased |
+| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner |
+| 0.18.0 | **Guarded Home Assistant updates** (`ha_update.py`, owner decision 2026-09-18): `ha_core_update` / `ha_os_update` to one exact stable, newer, Supervisor-offered version, **without a maintenance window**. They take a full backup (confirmed), update, resume after the restart from a `Store`, run a health check, and roll back if it fails: Core by version, then by restoring the backup; the OS by its other boot slot. Every step goes to the logbook and to `snapshot.ha_update`. The homeowner can opt out with the new `switch.dartec_approved_updates` or the options flow (`guarded_updates`, on by default). Supervised installs refuse OS updates. `maintenance_status` reports `guarded`. Calls on the integration's own entities, and area/device/floor/label targeting, are refused (#11). Snapshots go out at once on each update step (`SIGNAL_SNAPSHOT_NOW`). Unreleased |
 
 ---
 

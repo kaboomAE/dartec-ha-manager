@@ -268,13 +268,20 @@ def consent(hass: HomeAssistant) -> dict:
 
 def status(hass: HomeAssistant) -> dict:
     """Window state, in the shape the manager's UI consumes."""
+    from .service_policy import guarded_status
+
     until = _store(hass).get(_STATE_KEY)
+    # The guarded tier needs no window; reported so the manager can tell,
+    # from the home's own answer, whether it takes guarded updates.
+    guarded = guarded_status(_entry_options(hass))
     if not until or until <= _now():
         return {"open": False, "until": None, "seconds_remaining": 0,
-                "consent": consent(hass), "commissioning": commissioning(hass)}
+                "consent": consent(hass), "commissioning": commissioning(hass),
+                "guarded": guarded}
     return {"open": True, "until": until.isoformat(),
             "seconds_remaining": int((until - _now()).total_seconds()),
-            "consent": consent(hass), "commissioning": commissioning(hass)}
+            "consent": consent(hass), "commissioning": commissioning(hass),
+            "guarded": guarded}
 
 
 def switch_state(hass: HomeAssistant) -> dict:

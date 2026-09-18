@@ -66,8 +66,24 @@ install rather than a number somebody remembered to update in two places.
   there at any time. It needs no maintenance window, so copies can run on a
   schedule while nobody is home. The maintenance window does not stand in for
   this setting.
+- **Approved Home Assistant updates** install Home Assistant Core or OS updates
+  without a maintenance window, because some are security fixes that should
+  not wait for someone to be home. Only a version Dartec has tested on its
+  own bench and approved, only an exact newer stable release, and only one
+  your Supervisor offers. A full backup is taken first, the home checks
+  itself afterwards (Home Assistant running, configuration valid, every
+  integration and add-on that was running still running, no new serious
+  repairs, Zigbee/Z-Wave coordinators still up), and an unhealthy update is
+  rolled back: Core to the version it had, restoring the backup if needed;
+  the OS by booting its previous version. Every step is written to your
+  logbook. This is **on by default**; switch **Allow Dartec to install
+  approved Home Assistant updates** off, or turn it off in this integration's
+  options, and Dartec will not start another one. It cannot be used to restart
+  Home Assistant for any other reason or to install anything else. Supervised
+  installs take Core updates only; Container and Core installs take none.
 - Calls that would target the whole house at once (`entity_id: all`, or no
-  target at all) are refused.
+  target at all) are refused, as are calls that target by area, device, floor
+  or label, and calls on this integration's own switches: those are yours.
 - Every command executed or refused is written to **your own logbook**, so the
   record of what Dartec did in your home lives in your system, not only ours.
 - Admin credentials never leave the home, and no long-lived Home Assistant

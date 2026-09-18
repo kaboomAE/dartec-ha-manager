@@ -6,14 +6,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from . import maintenance
+from . import ha_update, maintenance
 from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 
-# The switch that lets a homeowner grant and revoke Dartec's access to the
-# sensitive operations. It is the only entity this integration creates, and
-# the only control in it a customer is expected to touch.
+# The homeowner's controls over Dartec: "Allow Dartec support" (the
+# maintenance window) and "Allow Dartec to install approved Home Assistant
+# updates" (the opt-out from guarded updates). They are the only entities this
+# integration creates.
 PLATFORMS = [Platform.SWITCH]
 
 
@@ -38,6 +39,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     link = CloudLink(hass, entry.data[CONF_SERVER_URL], entry.data[CONF_PAIRING_TOKEN])
     link.start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
+
+    # A guarded update restarts Home Assistant (or reboots the machine) in
+    # the middle of itself. This is where it carries on: the health check,
+    # and the rollback if one is needed. See ha_update.py.
+    await ha_update.async_setup(hass)
     return True
 
 
