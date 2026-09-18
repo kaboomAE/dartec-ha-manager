@@ -6,12 +6,13 @@ reading and ships two short lists, and the manager does the deciding —
 thresholds are per organisation, and "how long has it been down" and "have we
 already told anyone" need memory the home does not keep.
 
-**Registry entities only.** Both lists are built from the entity registry,
-because a battery or an outage is only useful attached to a *device*, and only
-registered entities have one. An entity whose integration gives it no
-`unique_id` never enters the registry, so it is invisible here as it is to
-every other part of the snapshot (the manager's "registry blind spot"). That
-gap is documented, not papered over.
+**The registry, and what is outside it.** An entity only enters Home
+Assistant's entity registry if its integration gives it a `unique_id`, and
+only a registered entity belongs to a device. So *offline devices* are judged
+from the registry alone — an entity outside it has no device to be offline.
+*Batteries* also read battery sensors outside the registry (a YAML template,
+say), one row per entity, keyed `entity:<entity_id>`
+(dartec-ha-manager-server#16).
 
 **How an expected-unavailable entity is told from a device that dropped off.**
 A device is reported offline when every entity it has that *should* hold a
@@ -71,6 +72,9 @@ BATTERY_EXCLUDED_PLATFORMS = frozenset({"mobile_app"})
 # large house; the true total travels alongside.
 MAX_BATTERIES = 200
 MAX_OFFLINE = 100
+# Battery rows for entities outside the registry are keyed by this plus the
+# entity id: they have no device to key on.
+UNREGISTERED_PREFIX = "entity:"
 
 
 def battery_reading(domain: str, device_class: str | None, state: str | None,
@@ -221,6 +225,24 @@ def collect(hass) -> dict[str, Any]:
             readings.append({"device_id": reg.device_id, "device": device_name(device),
                              "area": area_names.get(area_id) if area_id else None,
                              "entity_id": reg.entity_id, "reading": reading})
+
+        # Battery sensors outside the registry (no unique_id: a YAML template
+        # battery, say). They have no device, so each is its own row, keyed
+        # `entity:<entity_id>` so it can never collide with a device id. They
+        # can never be judged offline, for the same reason.
+        registered = {reg.entity_id for reg in er.async_get(hass).entities.values()}
+        for state in hass.states.async_all(("sensor", "binary_sensor")):
+            if state.entity_id in registered:
+                continue
+            reading = battery_reading(state.domain, state.attributes.get("device_class"),
+                                      state.state,
+                                      state.attributes.get("unit_of_measurement"))
+            if reading is None:
+                continue
+            readings.append({"device_id": f"{UNREGISTERED_PREFIX}{state.entity_id}",
+                             "device": state.attributes.get("friendly_name") or state.entity_id,
+                             "area": None, "entity_id": state.entity_id,
+                             "reading": reading})
 
         batteries = summarize_batteries(readings)
         out["battery_count"] = len(batteries)
