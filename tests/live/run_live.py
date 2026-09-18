@@ -468,6 +468,15 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                             f"manifest says {manifest_version}")
         if not query.get("ok"):
             problems.append(f"registry_query failed: {query}")
+        # Hardware identity and disk health (0.19). In a container there is no
+        # Supervisor or UDisks2, so the health section must still arrive and
+        # say why it is short, never be missing or crash the snapshot.
+        hardware = snapshot.get("hardware") or {}
+        if not hardware.get("ha_uuid"):
+            problems.append(f"snapshot hardware has no ha_uuid: {sorted(hardware)}")
+        disk = snapshot.get("disk_health")
+        if not isinstance(disk, dict) or not ("sources" in disk or "unavailable" in disk):
+            problems.append(f"snapshot disk_health missing or malformed: {disk!r}")
         problems += check_devices(snapshot, query, truth)
 
         swap = wait_for("the hacs_token_set answer",

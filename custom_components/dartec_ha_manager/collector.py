@@ -15,7 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import device_health, hacs_token, signal_health
+from . import device_health, hacs_token, hardware, signal_health
 from .const import DOMAIN
 from .hardware import async_collect_hardware
 from .registry_access import all_devices
@@ -80,6 +80,17 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     supervisor = await _collect_supervisor(hass)
     snapshot["hardware"] = await async_collect_hardware(
         hass, supervisor.get("platform") if supervisor else None)
+    # Which machine this is and how its disk is holding up. Slow-cadence and
+    # cached (see disk_health.py); the manager uses it to know which model
+    # every home runs and to notice a machine changing under a home.
+    try:
+        identity = await hardware.async_collect_identity(hass)
+        snapshot["hardware"].update({k: v for k, v in identity.items() if v is not None})
+        snapshot["disk_health"] = await hardware.async_collect_disk_health(hass, identity)
+        snapshot["host"].update({k: v for k, v in (
+            await hardware.async_collect_temperatures(hass, identity)).items() if v is not None})
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("hardware identity/health collect failed: %s", err)
     if supervisor:
         snapshot["addons"] = supervisor.get("addons")
         host_disk = supervisor.get("host_disk") or {}
