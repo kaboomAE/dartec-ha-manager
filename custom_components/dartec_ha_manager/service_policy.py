@@ -199,7 +199,9 @@ OPT_IN_ACTIONS = {
 # * **The homeowner can turn it off**, locally: the "Allow Dartec to install
 #   approved updates" switch, or the same setting in this
 #   integration's options (OPT_GUARDED_UPDATES). On by default, because the
-#   point is that updates reach homes nobody is attending. Off stops the next
+#   point is that updates reach homes nobody is attending; the owner confirmed
+#   the default on 2026-09-18, knowing a home that turns it off stops
+#   receiving security fixes from Dartec. Off stops the next
 #   update; one already under way finishes, rollback included, because an
 #   update stopped half-way is worse than either end of it. The manager cannot
 #   switch it back on (check_own_entities).
@@ -212,8 +214,8 @@ GUARDED_ACTIONS: dict[str, frozenset[str]] = {
     "ha_core_update": frozenset({"version", "job_id", "rollout_id"}),
     "ha_os_update": frozenset({"version", "job_id", "rollout_id"}),
     # The owner's decision, 2026-09-18, asked and answered in the session
-    # that built the manager's staged agent rollout: agent updates get the
-    # same exception. Why: a home whose commissioning has closed never took
+    # that built the manager's staged agent rollout and confirmed again
+    # directly the same day: agent updates get the same exception. Why: a home whose commissioning has closed never took
     # an agent update again unless someone at the house switched support on,
     # which is how a live home was still on 0.14.6 with 0.17.x released.
     # Its shape is narrower than the others because agent_update already is:
