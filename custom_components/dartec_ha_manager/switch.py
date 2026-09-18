@@ -10,7 +10,7 @@ So the same window is also a switch. On grants Dartec support the sensitive
 operations for the default period; off revokes it immediately. It appears on
 their dashboard next to their lights.
 
-A second switch, "Allow Dartec to install approved Home Assistant updates",
+A second switch, "Allow Dartec to install approved updates",
 is the homeowner's opt-out from guarded updates (service_policy.py,
 GUARDED_ACTIONS). It is on by default and is stored in the entry's options, so
 it survives restarts, unlike the window. Neither switch can be operated by the
@@ -61,7 +61,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import maintenance
 from .const import DOMAIN
-from .service_policy import OPT_GUARDED_UPDATES, guarded_enabled
+from .service_policy import GUARDED_SWITCH_NAME, OPT_GUARDED_UPDATES, guarded_enabled
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry,
@@ -132,7 +132,8 @@ class MaintenanceSwitch(SwitchEntity):
 
 
 class GuardedUpdatesSwitch(SwitchEntity):
-    """The homeowner's opt-out from approved Home Assistant updates.
+    """The homeowner's opt-out from approved updates: Home Assistant Core
+    and OS, and (since 2026-09-18) the Dartec agent's own.
 
     On by default: the owner's decision (2026-09-18) is that security fixes
     reach homes nobody is attending. Off stops the next update. An update
@@ -142,7 +143,7 @@ class GuardedUpdatesSwitch(SwitchEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_name = "Allow Dartec to install approved Home Assistant updates"
+    _attr_name = GUARDED_SWITCH_NAME
     _attr_icon = "mdi:update"
     _attr_should_poll = False
 
@@ -167,7 +168,7 @@ class GuardedUpdatesSwitch(SwitchEntity):
             return
         self.hass.config_entries.async_update_entry(
             self._entry, options={**self._entry.options, OPT_GUARDED_UPDATES: value})
-        maintenance.logbook(self.hass, "Approved Home Assistant updates from Dartec "
+        maintenance.logbook(self.hass, "Approved updates from Dartec "
                                        f"turned {'on' if value else 'off'} here")
         self.async_write_ha_state()
 
