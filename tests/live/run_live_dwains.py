@@ -7,14 +7,18 @@ theme, opening Dwains' "add card" pop-up logged, three times,
 
 from Home Assistant's thermostat control, which the pop-up renders as a
 preview. The agent injects one module into every page, `www/dashboard-fix.js`
-(the dark-mode notification fix), so it was a suspect. This runs the question
-rather than arguing it.
+(the dark-mode notification fix), so it was a suspect. It was not: the cause
+is Dwains mounting its pop-ups on `document.body`, outside the
+`<home-assistant>` element whose context gives HA's controls their formatters
+from 2026.7 (reported upstream as dwains-dashboard-next#18). Since 0.21.0 the
+same module works around it, by moving that one pop-up inside
+`<home-assistant>` before Dwains opens it.
 
 For each Home Assistant version given, it starts the agent from this working
 tree the way run_live.py does, pairs it, installs the exact frontend pieces the
 affected home runs (pinned below: Dwains Dashboard Next, card-mod and the
 Dartec theme, fetched from their repositories at those tags), creates a Dwains
-dashboard, and then, in Chromium, opens the pop-up in every combination of:
+dashboard, and then opens the pop-up in every combination of:
 
 * Firefox (the owner's browser) and Chromium;
 * the agent's dashboard fix loaded, or blocked at the network;
@@ -25,30 +29,33 @@ dashboard, and then, in Chromium, opens the pop-up in every combination of:
 Each combination is a fresh page load. The console and uncaught errors are
 recorded, with a screenshot of the pop-up, and the table is printed. The
 demo thermostat is given a `target_temp_step`, as real ones have, so the
-error reads exactly as it did on the home.
+error reads exactly as it did on the home. The pop-up is then closed and
+opened again.
 
-It then isolates the cause: the same Dwains card host, with the same `hass`,
-mounted once under `document.body` (where Dwains puts its pop-ups) and once
-inside `<home-assistant>`.
+It also isolates the cause: the same Dwains card host, with the same `hass`,
+mounted once under `document.body` and once inside `<home-assistant>`.
 
 What it asserts:
 
-* **The fix never causes an error of its own.** For every combination, the
-  errors with the fix loaded are exactly the errors without it. This is the
-  regression check the issue asked for.
+* **With the fix, the pop-up is clean.** No formatter error, the pop-up sits
+  inside `<home-assistant>`, closing it leaves nothing behind, it opens
+  again, and picking the thermostat opens Dwains' editor with a clean live
+  preview. And the fix adds no error of its own: every other error with the
+  fix loaded also appears without it.
 * **The cause is where Dwains mounts its pop-up.** The card host errors under
   `document.body` and renders cleanly inside `<home-assistant>`, in both
-  browsers, with the fix blocked. If that stops being true the diagnosis in
-  #25 is out of date, and the test says so.
-* **The fix still works.** In dark mode with the Dartec theme, a notification
-  row in Dwains' own notification panel reaches 4.5:1 between its text and
-  its background.
-* With `--expect-clean`, no combination logs the formatter error at all. That
-  is the check to turn on once Dwains is fixed upstream; until then the error
-  is reported, not failed on, because it is not the agent's.
+  browsers, with the fix blocked, exactly when the unfixed pop-up errors. If
+  that stops being true the diagnosis in #25 is out of date, and the test says
+  so.
+* **The notification fix still works.** In dark mode with the Dartec theme, a
+  notification row in Dwains' own notification panel reaches 4.5:1 between
+  its text and its background.
+* Without the fix the upstream error is reported, not failed on. With
+  `--expect-clean` it fails too: the check for Dwains having fixed it, at
+  which point the workaround can go.
 
-Needs Docker, network access to GitHub, and Playwright with Chromium
-(`pip install playwright && playwright install chromium`).
+Needs Docker, network access to GitHub, and Playwright with Chromium and
+Firefox (`pip install playwright && playwright install chromium firefox`).
 
     python tests/live/run_live_dwains.py                          # 2026.9.3
     python tests/live/run_live_dwains.py 2026.9.3 --artifacts out # screenshots + table
@@ -184,19 +191,42 @@ OPEN_PICKER = """async () => {
   return customElements.get("hui-dialog-create-card") ? "native" : "dwains";
 }""" % WALK
 
+# Wherever it is: Dwains puts it on document.body, the fix moves it inside
+# <home-assistant>.
+FIND_PICKERS = """const pickers = () => {
+  const tag = "dwains-dashboard-next-card-editor-dialog";
+  const ha = document.querySelector("home-assistant");
+  return [...document.querySelectorAll(tag),
+          ...((ha && ha.shadowRoot) ? ha.shadowRoot.querySelectorAll(tag) : [])];
+};"""
+
 PICKER_READY = """() => {
-  const dialog = document.querySelector("dwains-dashboard-next-card-editor-dialog");
+  %s
+  const dialog = pickers()[0];
   const root = dialog && dialog.shadowRoot;
   const host = root && root.querySelector(".dd-preview-host[data-card-type=thermostat]");
   return !!(host && host.childElementCount > 0);
-}"""
+}""" % FIND_PICKERS
 
 WHERE_DIALOG = """() => {
-  const dialog = document.querySelector("dwains-dashboard-next-card-editor-dialog");
+  %s
+  const dialog = pickers()[0];
   if (!dialog) return null;
-  return {parent: dialog.parentNode && (dialog.parentNode.localName || "#document"),
-          inside_home_assistant: !!dialog.closest("home-assistant")};
-}"""
+  const ha = document.querySelector("home-assistant");
+  return {parent: dialog.parentNode === document.body ? "body"
+                  : dialog.getRootNode() === (ha && ha.shadowRoot) ? "home-assistant"
+                  : String(dialog.parentNode && dialog.parentNode.nodeName),
+          inside_home_assistant: dialog.getRootNode() === (ha && ha.shadowRoot)};
+}""" % FIND_PICKERS
+
+# Closes it the way its own close button does, then counts what is left.
+CLOSE_PICKER = """async () => {
+  %s
+  const dialog = pickers()[0];
+  if (dialog && typeof dialog.closeDialog === "function") dialog.closeDialog();
+  await new Promise((r) => setTimeout(r, 800));
+  return pickers().length;
+}""" % FIND_PICKERS
 
 # The fix's own target: Dwains' notification panel draws each row with a
 # hardcoded near-white background. Measured the way a reader meets it, the
@@ -284,12 +314,33 @@ def set_theme(page, theme: str) -> None:
                            "service_data": {"name": theme, "mode": mode}})
 
 
+# Picks the thermostat the way a click on its tile does, and waits for the
+# editor's own live preview of it.
+PICK_THERMOSTAT = """async () => {
+  %s
+  const dialog = pickers()[0];
+  const tile = dialog && dialog.shadowRoot &&
+      dialog.shadowRoot.querySelector(".dd-preview-host[data-card-type=thermostat]");
+  const button = tile && tile.closest("button");
+  if (!button) return "no thermostat tile";
+  button.click();
+  for (let i = 0; i < 100; i++) {
+    const preview = dialog.shadowRoot.querySelector(".preview dwains-dashboard-next-card-host");
+    if (preview && preview.childElementCount) return "editor";
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return "no editor preview";
+}""" % FIND_PICKERS
+
+
 def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None) -> dict:
     context = new_context(browser, stored, combo.scheme, combo.fix)
     page = context.new_page()
     errors: list[str] = []
     fix_served: list[int] = []
-    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    warnings: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else
+            warnings.append(m.text) if m.type == "warning" else None)
     page.on("pageerror", lambda e: errors.append(f"{e.name}: {e.message}"))
     page.on("response", lambda r: fix_served.append(len(r.body())) if
             "dashboard-fix.js" in r.url else None)
@@ -303,7 +354,17 @@ def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None
         where = page.evaluate(WHERE_DIALOG)
         if shots:
             page.screenshot(path=str(shots / f"{combo.key}.png"))
+        # Close, then open again: a moved pop-up is one Dwains can no longer
+        # find to clean up, so it has to be gone, and opening must still work.
         formatter = [e for e in errors if CONTEXT_MISSING.search(e)]
+        left_after_close = page.evaluate(CLOSE_PICKER)
+        page.evaluate(OPEN_PICKER)
+        page.wait_for_function(PICKER_READY, timeout=30000)
+        reopened = page.evaluate(f"() => {{ {FIND_PICKERS} return pickers().length; }}")
+        before_pick = len(errors)
+        picked = page.evaluate(PICK_THERMOSTAT)
+        page.wait_for_timeout(2500)
+        editor_errors = [e[:200] for e in errors[before_pick:] if CONTEXT_MISSING.search(e)]
         return {"combo": combo.key, "engine": combo.engine, "fix_loaded": combo.fix,
                 "scheme": combo.scheme, "card_mod": combo.card_mod, "theme": combo.theme,
                 "formatter_errors": len(formatter),
@@ -311,7 +372,10 @@ def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None
                 "other_errors": sorted({e[:200] for e in errors
                                         if not CONTEXT_MISSING.search(e)}),
                 "sample": formatter[0][:400] if formatter else "", "dialog": where,
-                "picker": opened,
+                "picker": opened, "left_after_close": left_after_close,
+                "pickers_after_reopen": reopened,
+                "picked": picked, "editor_errors": editor_errors,
+                "already_open": [w for w in warnings if "already open" in w],
                 # Real module: several KB. Blocked: the stub's few bytes.
                 "fix_bytes": fix_served[0] if fix_served else None}
     finally:
@@ -383,13 +447,14 @@ def give_thermostat_a_step(base: str, token: str) -> str:
 
 
 def table(rows: list[dict]) -> str:
-    lines = ["| Browser | Dashboard fix | Mode | card-mod | Theme | Formatter errors "
-             "| Other errors |", "|---|---|---|---|---|---|---|"]
+    lines = ["| Browser | Dashboard fix | Mode | card-mod | Theme | Pop-up in "
+             "| Formatter errors | Other errors | Left after close |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append(f"| {r['engine']} | {'loaded' if r['fix_loaded'] else 'blocked'} | "
-                     f"{r['scheme']} | "
-                     f"{'on' if r['card_mod'] else 'off'} | {r['theme']} | "
-                     f"{r['formatter_errors']} | {len(r['other_errors'])} |")
+                     f"{r['scheme']} | {'on' if r['card_mod'] else 'off'} | {r['theme']} | "
+                     f"{(r['dialog'] or {}).get('parent')} | {r['formatter_errors']} | "
+                     f"{len(r['other_errors'])} | {r['left_after_close']} |")
     return "\n".join(lines)
 
 
@@ -493,18 +558,33 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                 problems.append(f"{r['combo']}: the fix was not served, so this combination "
                                 "did not test it")
             twin = by_key[r["combo"].replace("-fix-", "-nofix-", 1)]
-            # Which errors, not how many: the resize observer adds a copy when it
-            # happens to fire before the pop-up settles, fix or no fix.
-            if set(r["formatter_messages"]) != set(twin["formatter_messages"]) or \
-                    set(r["other_errors"]) != set(twin["other_errors"]):
-                problems.append(f"{r['combo']}: the fix changes the errors "
-                                f"({r['formatter_messages']} vs {twin['formatter_messages']}"
-                                f"; others {r['other_errors']} vs "
-                                f"{twin['other_errors']})")
-        if expect_clean:
-            dirty = [r["combo"] for r in rows if r["formatter_errors"]]
-            if dirty:
-                problems.append(f"the formatter error still happens in: {dirty}")
+            if r["formatter_errors"]:
+                problems.append(f"{r['combo']}: the pop-up still errors with the fix: "
+                                f"{r['formatter_messages']}")
+            if not (r["dialog"] or {}).get("inside_home_assistant"):
+                problems.append(f"{r['combo']}: the pop-up was not moved inside "
+                                f"<home-assistant>: {r['dialog']}")
+            if r["picked"] != "editor" or r["editor_errors"]:
+                problems.append(f"{r['combo']}: picking the thermostat gave {r['picked']} "
+                                f"with {r['editor_errors']}")
+            # Anything else the page logs must also be there without the fix.
+            new = set(r["other_errors"]) - set(twin["other_errors"])
+            if new:
+                problems.append(f"{r['combo']}: errors only with the fix: {sorted(new)}")
+        for r in rows:
+            if r["left_after_close"] or r["pickers_after_reopen"] != 1 or r["already_open"]:
+                problems.append(f"{r['combo']}: after closing, {r['left_after_close']} "
+                                f"pop-up(s) were left; reopening gave "
+                                f"{r['pickers_after_reopen']} ({r['already_open']})")
+        upstream = [r["combo"] for r in rows if not r["fix_loaded"] and r["formatter_errors"]]
+        if upstream:
+            log(f"{version}: without the fix the upstream error is still there "
+                f"({len(upstream)} of {len(rows) // 2}); the workaround is still needed")
+        else:
+            log(f"{version}: clean without the fix too; if that holds on a Dwains "
+                "release, the workaround in dashboard-fix.js can go")
+        if expect_clean and upstream:
+            problems.append(f"the upstream error still happens without the fix: {upstream}")
 
         with_fix = notification.get("fix") or {}
         if not with_fix.get("contrast"):
@@ -545,7 +625,7 @@ def main() -> int:
     parser.add_argument("--artifacts", type=Path, help="write screenshots and the table here")
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--expect-clean", action="store_true",
-                        help="also fail if Dwains' pop-up logs the formatter error at all")
+                        help="also fail if the pop-up errors without the fix (upstream fixed?)")
     args = parser.parse_args()
     failed = False
     for version in args.versions:
