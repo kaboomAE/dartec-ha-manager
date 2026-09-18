@@ -1,0 +1,34 @@
+| Browser | Dashboard fix | Mode | card-mod | Theme | Formatter errors | Other errors |
+|---|---|---|---|---|---|---|
+| chromium | loaded | light | on | Dartec | 2 | 1 |
+| chromium | loaded | light | on | default | 2 | 1 |
+| chromium | loaded | light | off | Dartec | 2 | 1 |
+| chromium | loaded | light | off | default | 2 | 1 |
+| chromium | loaded | dark | on | Dartec | 2 | 1 |
+| chromium | loaded | dark | on | default | 2 | 1 |
+| chromium | loaded | dark | off | Dartec | 2 | 1 |
+| chromium | loaded | dark | off | default | 2 | 1 |
+| chromium | blocked | light | on | Dartec | 2 | 1 |
+| chromium | blocked | light | on | default | 2 | 1 |
+| chromium | blocked | light | off | Dartec | 2 | 1 |
+| chromium | blocked | light | off | default | 2 | 1 |
+| chromium | blocked | dark | on | Dartec | 2 | 1 |
+| chromium | blocked | dark | on | default | 2 | 1 |
+| chromium | blocked | dark | off | Dartec | 2 | 1 |
+| chromium | blocked | dark | off | default | 2 | 1 |
+| firefox | loaded | light | on | Dartec | 2 | 0 |
+| firefox | loaded | light | on | default | 2 | 0 |
+| firefox | loaded | light | off | Dartec | 2 | 0 |
+| firefox | loaded | light | off | default | 2 | 0 |
+| firefox | loaded | dark | on | Dartec | 2 | 0 |
+| firefox | loaded | dark | on | default | 2 | 0 |
+| firefox | loaded | dark | off | Dartec | 2 | 0 |
+| firefox | loaded | dark | off | default | 2 | 0 |
+| firefox | blocked | light | on | Dartec | 2 | 0 |
+| firefox | blocked | light | on | default | 2 | 0 |
+| firefox | blocked | light | off | Dartec | 2 | 0 |
+| firefox | blocked | light | off | default | 2 | 0 |
+| firefox | blocked | dark | on | Dartec | 2 | 0 |
+| firefox | blocked | dark | on | default | 2 | 0 |
+| firefox | blocked | dark | off | Dartec | 2 | 0 |
+| firefox | blocked | dark | off | default | 2 | 0 |

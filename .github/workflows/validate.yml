@@ -6,6 +6,10 @@
 # - live: the agent from this commit, paired to a stub manager inside real
 #   Home Assistant containers — see tests/live/run_live.py.
 # - live-household: "My Home", the household panel, as several real people.
+# - live-dwains: Dwains Dashboard Next's Add card pop-up with the agent's
+#   dashboard fix loaded and blocked, in Firefox and Chromium; the fix must
+#   never change the errors, and must still make notifications readable in
+#   dark mode — see tests/live/run_live_dwains.py (dartec-ha-manager#25).
 # - live-brand: the brand's old spelling staged on a home (a stored default
 #   theme under the old name, the entry title, a dashboard title) and put
 #   right - see tests/live/run_live_brand.py.
@@ -125,6 +129,32 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-update-${{ matrix.version }}
+          path: live-artifacts
+          if-no-files-found: ignore
+
+  live-dwains:
+    # The dashboard fix against the dashboard it fixes, in two real browsers -
+    # see tests/live/run_live_dwains.py. Pinned to the versions the affected
+    # home ran; scheduled runs add `stable` so a newer Home Assistant is tried
+    # before homes take it. About three minutes.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.9.3", "stable"]' || '["2026.9.3"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright && python -m playwright install --with-deps chromium firefox
+      - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      - run: python tests/live/run_live_dwains.py ${{ matrix.version }} --artifacts live-artifacts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-dwains-${{ matrix.version }}
           path: live-artifacts
           if-no-files-found: ignore
 
