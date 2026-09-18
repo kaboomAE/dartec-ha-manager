@@ -212,3 +212,32 @@ class TestOffsiteBackupOptIn:
                                         "backup_delete", "backup_schedule"])
     def test_other_backup_actions_do_not_need_it(self, action):
         assert check_opt_in({"action": action}, {}) is None
+
+
+class TestTheHomesOwnControls:
+    """dartec-ha-manager#11: the cloud must not reach the switches that are
+    the home's controls over the cloud."""
+
+    def test_switching_on_the_consent_switch_is_refused(self):
+        from service_policy import check_own_entities
+
+        data = {"entity_id": "switch.allow_dartec_support"}
+        assert check_call_service(call("switch", "turn_on", **data),
+                                  maintenance_open=False) is None  # routine...
+        refusal = check_own_entities(data, {"switch.allow_dartec_support"})
+        assert refusal and "controlled only from this home" in refusal  # ...but ours
+
+    def test_inside_a_target_block_and_in_a_list(self):
+        from service_policy import check_own_entities
+
+        own = {"switch.dartec_renamed"}
+        assert check_own_entities({"target": {"entity_id": ["light.a", "switch.DARTEC_renamed"]}}, own)
+        assert check_own_entities({"entity_id": "light.a"}, own) is None
+
+    @pytest.mark.parametrize("key", ["area_id", "device_id", "floor_id", "label_id"])
+    def test_indirect_targets_are_refused(self, key):
+        data = {"entity_id": "light.kitchen", key: "living_room"}
+        refusal = check_call_service(call("switch", "turn_on", **data), maintenance_open=True)
+        assert refusal and key in refusal
+        nested = {"entity_id": "light.kitchen", "target": {key: "x"}}
+        assert check_call_service(call("light", "turn_on", **nested), maintenance_open=True)
