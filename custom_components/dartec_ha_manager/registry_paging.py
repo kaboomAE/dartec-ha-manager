@@ -14,6 +14,33 @@ from __future__ import annotations
 
 MAX_PAGE = 200
 DEFAULT_PAGE = 100
+# The manager's full inventory fetch pages with this instead: a 5,000-entity
+# home in five round trips rather than twenty-five. Only for inventory reads
+# (`include_unregistered`); an older agent clamps to MAX_PAGE, and the manager
+# pages by what comes back, so both work.
+MAX_INVENTORY_PAGE = 1000
+
+# The facts about an entity that change when the *registry* changes — a
+# rename, a new area, an entity added or removed, one disabled — and not when
+# its state does. Hashing state would change the digest every minute and make
+# the manager refetch a home's whole inventory on every snapshot.
+DIGEST_FIELDS = ("entity_id", "name", "domain", "platform", "device_class", "area",
+                 "device_id", "entity_category", "disabled", "hidden", "registered")
+
+
+def inventory_digest(rows: list[dict]) -> str:
+    """16 hex characters that change when the entity inventory does.
+
+    Sent in every snapshot so the manager can tell, without asking, whether
+    the full list it holds is still the home's list. Order-independent.
+    """
+    import hashlib
+    import json
+
+    facts = sorted(
+        [str(row.get(field)) if row.get(field) is not None else "" for field in DIGEST_FIELDS]
+        for row in rows)
+    return hashlib.sha256(json.dumps(facts, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
 def _matches_query(haystack: tuple, needle: str) -> bool:
@@ -42,7 +69,7 @@ def _device_status(row: dict) -> str:
 
 def paginate_rows(rows: list[dict], kind: str, *, query: str = "", domain: str = "",
                   status: str = "all", area: str = "", offset: int = 0,
-                  limit: int = DEFAULT_PAGE) -> dict:
+                  limit: int = DEFAULT_PAGE, max_page: int = MAX_PAGE) -> dict:
     """Filter, count and slice — deliberately free of Home Assistant imports.
 
     Kept pure because this is where the counting bugs live, not in the registry
@@ -63,7 +90,7 @@ def paginate_rows(rows: list[dict], kind: str, *, query: str = "", domain: str =
         limit = DEFAULT_PAGE
     if limit <= 0:
         limit = DEFAULT_PAGE
-    limit = min(limit, MAX_PAGE)
+    limit = min(limit, max_page)
     try:
         offset = max(0, int(offset))
     except (TypeError, ValueError):

@@ -18,11 +18,16 @@ For each Home Assistant version given, this:
    does, and checks the entry is still loaded, running with the new token,
    and that nothing in Home Assistant failed along the way
    (dartec-ha-manager#8);
-7. takes demo devices down, labels one as expected-offline and drains a
+7. reads the full entity inventory (`registry_query` with
+   `include_unregistered`) and checks it holds every entity Home Assistant's
+   REST API lists, that the entities outside the registry are exactly the ones
+   the snapshot reports as unregistered, and that its digest is the
+   snapshot's (dartec-ha-manager-server#16);
+8. takes demo devices down, labels one as expected-offline and drains a
    battery through Home Assistant's own APIs (`device_health_setup.py`), and
    checks the agent's `offline_devices` and `batteries` sections report
    exactly what Home Assistant was told — no more, no less;
-8. checks the log: nothing reported against `dartec_ha_manager`, in
+9. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
@@ -266,6 +271,48 @@ def latest_snapshot(name: str) -> tuple[int, dict | None]:
     return latest, (read_state(name, f"snapshot-{latest}.json") if latest else None)
 
 
+def check_inventory(name: str, base: str, token: str, timeout: float) -> tuple[list[str], dict]:
+    """The manager's full inventory against every state Home Assistant runs."""
+    result = wait_for("the inventory answer", lambda: read_state(name, "result-inventory.json"),
+                      timeout)
+    problems: list[str] = []
+    if not result.get("ok"):
+        return [f"the inventory query failed: {result}"], {}
+    items = result.get("items") or []
+    if result.get("total") != len(items):
+        problems.append(f"inventory returned {len(items)} of {result.get('total')} in one "
+                        "1000-row page; the larger inventory page is not in effect")
+    ids = {row["entity_id"] for row in items}
+    states = {s["entity_id"] for s in http("GET", f"{base}/api/states", token=token)}
+    missing = sorted(states - ids)
+    if missing:
+        problems.append(f"{len(missing)} entities Home Assistant runs are not in the "
+                        f"inventory: {missing[:8]}")
+    outside = {row["entity_id"] for row in items if row.get("registered") is False}
+    if not outside:
+        problems.append("no unregistered entities in the inventory; the demo has some, "
+                        "so the blind spot is not covered")
+
+    _, snap = latest_snapshot(name)
+    snap = snap or {}
+    reported = {row["entity_id"] for row in snap.get("unregistered_entities") or []}
+    if reported != outside:
+        problems.append(f"snapshot unregistered_entities differ from the inventory's: "
+                        f"only in snapshot {sorted(reported - outside)[:5]}, only in "
+                        f"inventory {sorted(outside - reported)[:5]}")
+    if snap.get("unregistered_count") != len(outside):
+        problems.append(f"unregistered_count {snap.get('unregistered_count')} != {len(outside)}")
+    if (snap.get("entity_registry_count") or 0) + len(outside) != result.get("total"):
+        problems.append(f"registry {snap.get('entity_registry_count')} + unregistered "
+                        f"{len(outside)} != inventory total {result.get('total')}")
+    if not snap.get("entity_inventory_digest") or \
+            snap.get("entity_inventory_digest") != result.get("inventory_digest"):
+        problems.append(f"snapshot digest {snap.get('entity_inventory_digest')} != "
+                        f"inventory digest {result.get('inventory_digest')}")
+    return problems, {"total": result.get("total"), "states": len(states),
+                      "unregistered": len(outside)}
+
+
 def check_device_health(name: str, token: str, timeout: float) -> tuple[list[str], dict]:
     """Stage the outage and the flat battery, then read them back from a snapshot
     taken afterwards. A snapshot from before the staging would pass the
@@ -483,6 +530,12 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                         lambda: read_state(name, "result-hacs-swap.json"), timeout)
         problems += check_hacs_swap(name, base, token, swap, timeout)
         log(f"{version}: HACS token swap answered {swap.get('reason') or 'ok'}")
+
+        inventory_problems, inventory = check_inventory(name, base, token, timeout)
+        problems += inventory_problems
+        log(f"{version}: inventory: {inventory.get('total')} entities for "
+            f"{inventory.get('states')} states, {inventory.get('unregistered')} outside "
+            "the registry")
 
         health_problems, health = check_device_health(name, token, timeout)
         problems += health_problems

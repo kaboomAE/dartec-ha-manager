@@ -22,7 +22,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .registry_paging import DEFAULT_PAGE, paginate_rows
+from .registry_paging import (DEFAULT_PAGE, MAX_INVENTORY_PAGE, MAX_PAGE, inventory_digest,
+                              paginate_rows)
 from .ws_bridge import call_own_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -179,7 +180,7 @@ async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     and it stays available while a home is change-frozen, because looking is
     not changing.
     """
-    from .collector import device_row, entity_row, registry_context
+    from .collector import device_row, entity_row, registry_context, unregistered_rows
     from .registry_access import all_devices
 
     kind = str(cmd.get("kind") or "entities")
@@ -187,16 +188,29 @@ async def registry_query(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         return _fail(f"unknown registry kind '{kind}'")
 
     ctx = registry_context(hass)
+    # `include_unregistered` adds what HA runs outside the registry (entities
+    # with no unique_id) and allows larger pages: it is how the manager builds
+    # its full inventory of a home. The digest is of every row, before any
+    # filter, so the manager can check that all its pages came from one
+    # version of the home and compare it with the snapshot's.
+    inventory = kind == "entities" and bool(cmd.get("include_unregistered"))
     if kind == "entities":
-        rows = [entity_row(reg, ctx, hass) for reg in ctx["entities"].entities.values()]
+        registry = list(ctx["entities"].entities.values())
+        rows = [entity_row(reg, ctx, hass) for reg in registry]
+        if inventory:
+            rows += unregistered_rows(hass, {reg.entity_id for reg in registry})
     else:
         rows = [device_row(device, ctx) for device in all_devices(ctx["devices"])]
 
-    return paginate_rows(
+    result = paginate_rows(
         rows, kind,
         query=cmd.get("query") or "", domain=cmd.get("domain") or "",
         status=cmd.get("status") or "all", area=cmd.get("area") or "",
-        offset=cmd.get("offset") or 0, limit=cmd.get("limit") or DEFAULT_PAGE)
+        offset=cmd.get("offset") or 0, limit=cmd.get("limit") or DEFAULT_PAGE,
+        max_page=MAX_INVENTORY_PAGE if inventory else MAX_PAGE)
+    if inventory:
+        result["inventory_digest"] = inventory_digest(rows)
+    return result
 
 
 

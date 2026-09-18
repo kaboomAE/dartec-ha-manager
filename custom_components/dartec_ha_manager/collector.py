@@ -19,6 +19,7 @@ from . import device_health, hacs_token, hardware, signal_health
 from .const import DOMAIN
 from .hardware import async_collect_hardware
 from .registry_access import all_devices
+from .registry_paging import inventory_digest
 from .version import async_agent_version
 
 _LOGGER = logging.getLogger(__name__)
@@ -170,6 +171,7 @@ def _collect_integrations(hass: HomeAssistant) -> list[dict]:
 # Reaching past the cap is what the registry_query command is for.
 MAX_DEVICES = 600
 MAX_ENTITIES = 2500
+MAX_UNREGISTERED = 500
 
 
 def registry_context(hass: HomeAssistant) -> dict:
@@ -252,6 +254,43 @@ def entity_row(reg, ctx: dict, hass: HomeAssistant) -> dict:
     }
 
 
+def unregistered_rows(hass: HomeAssistant, registered: set[str]) -> list[dict]:
+    """Entities Home Assistant runs that are not in its entity registry.
+
+    An entity only enters the registry if its integration gives it a
+    `unique_id`; YAML platforms and many template entities do not. They work
+    and show in HA's UI, and until this every consumer of the snapshot was
+    blind to them — 33 of 123 entities on the demo home
+    (dartec-ha-manager-server#16).
+
+    Shaped like `entity_row` so every consumer can take them unchanged, and
+    marked `registered: False`: they have no device, area or registry id, so
+    nothing can be renamed, moved or disabled through the registry commands,
+    and their entity id changes if their YAML does. Built from the state
+    machine, so the name is the friendly name and the class is the one the
+    state reports.
+    """
+    rows = []
+    for state in hass.states.async_all():
+        if state.entity_id in registered:
+            continue
+        rows.append({
+            "entity_id": state.entity_id,
+            "name": state.attributes.get("friendly_name"),
+            "domain": state.domain,
+            "platform": None,
+            "device_class": state.attributes.get("device_class"),
+            "area": None,
+            "device_id": None,
+            "entity_category": None,
+            "disabled": False,
+            "hidden": False,
+            "state": state.state,
+            "registered": False,
+        })
+    return rows
+
+
 def _collect_notify_targets(hass: HomeAssistant) -> list[str]:
     """Every `notify.*` action registered on this home, action name only.
 
@@ -311,7 +350,18 @@ def _collect_registries(hass: HomeAssistant) -> dict:
 
         entity_list = list(ctx["entities"].entities.values())
         out["entity_registry_count"] = len(entity_list)
-        out["entities"] = [entity_row(reg, ctx, hass) for reg in entity_list[:MAX_ENTITIES]]
+        rows = [entity_row(reg, ctx, hass) for reg in entity_list]
+        out["entities"] = rows[:MAX_ENTITIES]
+
+        # Everything HA runs outside the registry, capped like the registry
+        # sections. The manager's full inventory (registry_query with
+        # include_unregistered) is where the rest of both lists come from.
+        unregistered = unregistered_rows(hass, {reg.entity_id for reg in entity_list})
+        out["unregistered_count"] = len(unregistered)
+        out["unregistered_entities"] = unregistered[:MAX_UNREGISTERED]
+        # Changes only when the inventory does, never with state, so the
+        # manager can keep a full copy and refetch it only when this moves.
+        out["entity_inventory_digest"] = inventory_digest(rows + unregistered)
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("registry collect failed: %s", err)
     return out
