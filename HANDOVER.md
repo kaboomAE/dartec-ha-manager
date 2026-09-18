@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.20.0 (released 2026-09-18)
+**Current version**: 0.21.0 (released 2026-09-19)
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -384,6 +384,7 @@ check.
 | 0.19.0 | **Guarded agent updates** (owner decision 2026-09-18): `agent_update` joins `GUARDED_ACTIONS` and `GUARDED_WITHOUT_CONSENT`. With consent it runs as before; without it, only as `{restart, job_id, rollout_id}` (no `allow_downgrade`), never when `guarded_updates` is off, and always with a logbook line. The opt-out switch is renamed "Allow Dartec to install approved updates" (same entity id), and a consent refusal carries `code: "consent"`. Homes on older agents still need consent for the update that brings this |
 | 0.19.0 | **Every entity** (owner decision on dartec-ha-manager-server#16): the snapshot carries `unregistered_entities` (what Home Assistant runs outside its entity registry — no `unique_id` — shaped like registry rows and marked `registered: false`, capped at 500, `unregistered_count` the true total) and `entity_inventory_digest` (16 hex over every entity's registry facts, never state), so the manager keeps a full per-home inventory past the 2,500-row cap and refetches it only when the digest moves; `registry_query` takes `include_unregistered`, which adds those entities, allows 1,000-row pages and returns `inventory_digest`; battery sensors outside the registry are reported as their own rows keyed `entity:<entity_id>` |
 | 0.20.0 | **"My Home"**, the homeowner's household panel (`household.py`, `household_ws.py`, `www/household/`): add a person (Family (can manage the home) = admin, Family = user, Guest = user who can only sign in at home), edit, pause/resume, remove, owner-only password reset, and the first dashboard each person sees (`core.default_panel` in their frontend user data; **a convenience, not a security boundary**). English and Arabic (Arabic unreviewed). Inside the home only: admin-only panel and commands, no remote command, the snapshot gains `household` with counts by role and nothing else. Guide: `docs/my-home/`. Released 2026-09-18 |
+| 0.21.0 | **The brand's old spelling, and Dwains' card picker** (dartec-ha-manager#25). The snapshot gains `frontend_theme` (default themes as stored and as running, and the loaded theme names: HA silently runs its own default when the stored name is missing, as for `DarTec` after dartec-theme v1.1.0) and `branding` (`enabled`, `title`). New `lovelace_update` renames a storage dashboard (answers `previous_title`, logbook line). The agent corrects "DarTec" in its own entry title at setup. `www/dashboard-fix.js` moves Dwains' Add card picker inside `<home-assistant>` so HA 2026.7+ gives its previews their formatters (upstream dwains-dashboard-next#18; owner decision 2026-09-19). `hardware.py` renamed `machine.py` so HA 2026.5–2026.6 stop loading it as a hardware platform (#27). LICENSE: Dartec Smart Homes. Released 2026-09-19 |
 
 ---
 

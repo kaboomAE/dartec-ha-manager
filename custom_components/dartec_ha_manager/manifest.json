@@ -17,5 +17,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/kaboomAE/dartec-ha-manager/issues",
   "requirements": [],
-  "version": "0.20.0"
+  "version": "0.21.0"
 }
