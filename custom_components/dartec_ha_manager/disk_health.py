@@ -189,12 +189,12 @@ def soc_temp_c(root: str = "") -> float | None:
     return _millidegrees(f"{root}/sys/class/thermal/thermal_zone0/temp")
 
 
-def config_device(path: str = "/config", root: str = "") -> str | None:
+def config_device(path: str = "/config", root: str = "", stat=os.stat) -> str | None:
     """BLOCKING. The disk holding Home Assistant's config, for installs with
     no Supervisor to ask: the device number of the directory, looked up in
     /sys/dev/block."""
     try:
-        st_dev = os.stat(path).st_dev
+        st_dev = stat(path).st_dev
     except OSError:
         return None
     # Major 0 is a virtual filesystem (overlay, tmpfs, a container's bind of

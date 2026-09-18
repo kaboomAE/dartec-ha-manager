@@ -223,23 +223,21 @@ class TestContainerInstalls:
         assert storage["type"] == "nvme"
 
     @pytest.mark.skipif(not hasattr(os, "makedev"), reason="device numbers are POSIX")
-    def test_a_virtual_filesystem_is_no_disk(self, tmp_path, monkeypatch):
+    def test_a_virtual_filesystem_is_no_disk(self, tmp_path):
         """The live CI job: /config on a container's overlay has device 0:49,
         which is not a block device and must not be reported as one."""
         class Stat:
             st_dev = os.makedev(0, 49)
 
-        monkeypatch.setattr(disk_health.os, "stat", lambda _p: Stat())
-        assert disk_health.config_device("/config", str(tmp_path)) is None
+        assert disk_health.config_device("/config", str(tmp_path), stat=lambda _p: Stat()) is None
         assert sysfs_storage(None, str(tmp_path)) is None
 
     @pytest.mark.skipif(not hasattr(os, "makedev"), reason="device numbers are POSIX")
-    def test_a_block_device_without_a_sysfs_entry_is_no_disk(self, tmp_path, monkeypatch):
+    def test_a_block_device_without_a_sysfs_entry_is_no_disk(self, tmp_path):
         class Stat:
             st_dev = os.makedev(259, 3)
 
-        monkeypatch.setattr(disk_health.os, "stat", lambda _p: Stat())
-        assert disk_health.config_device("/config", str(tmp_path)) is None
+        assert disk_health.config_device("/config", str(tmp_path), stat=lambda _p: Stat()) is None
 
     def test_the_default_routes_interface_gives_the_mac(self, tmp_path):
         write(tmp_path, "/proc/net/route",
