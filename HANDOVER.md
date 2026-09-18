@@ -48,7 +48,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `device_health.py` | Batteries (one row per device, lowest first) and devices that stopped answering, summarised for the manager's alerts; **the rules for telling an expected-unavailable entity from a dead device live in its docstring**. No module-level HA imports |
 | `commands.py` | Command dispatch — routes an inbound action to its handler |
 | `ws_bridge.py` | Talks to HA's own websocket/REST over loopback with a short-lived self-minted token |
-| `hardware.py` | Host metrics; includes the ARM64 CPU-model decoding. Also the slow-cadence machine identity (Supervisor board, machine, MAC, the data disk) and disk health, cached so a snapshot only copies a dictionary |
+| `machine.py` | Host metrics; includes the ARM64 CPU-model decoding. Also the slow-cadence machine identity (Supervisor board, machine, MAC, the data disk) and disk health, cached so a snapshot only copies a dictionary. **Not called `hardware.py`**: Home Assistant reserves that name for hardware platforms, and 2026.5–2026.6 log an error for any `hardware.py` without `async_info` (#27) |
 | `disk_health.py` | What the disk and the machine's temperatures can be read from **without new privileges**: the Supervisor API, the host's UDisks2 over D-Bus (read-only, SMART for NVMe and ATA), and sysfs (hwmon sensors, eMMC life time). No module-level HA imports |
 | `lovelace_cmds.py` | Dashboard read/create/save |
 | `registry_cmds.py` | Areas, floors, device and entity assignment |
