@@ -81,7 +81,7 @@ install rather than a number somebody remembered to update in two places.
   Dartec will not start another one. It cannot be used to restart Home
   Assistant for any other reason or to install anything else. Supervised
   installs take Core updates only; Container and Core installs take none.
-- **Updates of this integration** follow the same rule (since 0.18.0): with
+- **Updates of this integration** follow the same rule (since 0.19.0): with
   approved updates on, Dartec can update this integration to its **latest
   release** without the maintenance window, upgrade only, and it restarts Home
   Assistant once to load it. Dartec updates one test home, then one of yours,
