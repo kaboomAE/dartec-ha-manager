@@ -2,6 +2,8 @@
 Dartec centralized fleet dashboard via a single outbound WebSocket."""
 from __future__ import annotations
 
+import re
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -18,7 +20,23 @@ from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 PLATFORMS = [Platform.SWITCH]
 
 
+# Homes paired before v0.6.1 were given the entry title "DarTec: <customer> /
+# <home>". The brand is Dartec. The title is this integration's own label,
+# shown on the homeowner's Integrations page, so the agent corrects it itself;
+# nothing else in the entry changes (dartec-ha-manager#25).
+_OLD_SPELLING = re.compile(r"Dar[ -]?Tec")
+
+
+def _correct_own_title(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    if entry.title and _OLD_SPELLING.search(entry.title):
+        hass.config_entries.async_update_entry(
+            entry, title=_OLD_SPELLING.sub("Dartec", entry.title))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Before any update listener is attached, so it sets nothing off.
+    _correct_own_title(hass, entry)
+
     # Branding is restored from the entry's options, so a home keeps its
     # installer branding across restarts even if the manager is unreachable.
     await async_setup_branding(hass, entry.options.get("branding"))

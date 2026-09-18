@@ -36,6 +36,12 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     snapshot["integrations"] = _collect_integrations(hass)
     snapshot["automations"] = _collect_automations(hass)
     snapshot["dashboards"] = _collect_dashboards(hass)
+    # What the household sees by default, and what the sidebar is branded:
+    # both are names a customer reads, and the manager checks them for the
+    # brand's spelling and for a default theme this home does not have
+    # (dartec-ha-manager#25).
+    snapshot["frontend_theme"] = await _collect_frontend_theme(hass)
+    snapshot["branding"] = _collect_branding(hass)
     snapshot["logs"], snapshot["log_total"] = _collect_logs(hass)
     # How well each device is heard. Cheap — one pass over the states machine
     # — and it is the data that answers "is anything about to drop off?"
@@ -448,6 +454,50 @@ def _collect_dashboards(hass: HomeAssistant) -> list[dict]:
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("dashboards collect failed: %s", err)
     return dashboards
+
+
+async def _collect_frontend_theme(hass: HomeAssistant) -> dict:
+    """BEST-EFFORT: the default themes as stored, as running, and the themes loaded.
+
+    Both are needed because Home Assistant quietly swaps a stored default it
+    cannot find for its own: a home set to `DarTec` before dartec-theme v1.1.0
+    renamed the theme to `Dartec` runs unthemed while still storing `DarTec`,
+    and the running value alone would say "default", as if chosen. The store
+    is read through the frontend's own Store object (async, already cached by
+    HA after the first load); the rest are the frontend's hass.data keys.
+    Theme names only, never their contents.
+    """
+    out: dict[str, Any] = {}
+    try:
+        out["default"] = hass.data.get("frontend_default_theme")
+        out["default_dark"] = hass.data.get("frontend_default_dark_theme")
+        themes = hass.data.get("frontend_themes")
+        if isinstance(themes, dict):
+            out["available"] = sorted(str(name) for name in themes)[:50]
+        store = hass.data.get("frontend_themes_store")
+        stored = await store.async_load() if store is not None else None
+        if isinstance(stored, dict):
+            out["stored_default"] = stored.get("frontend_default_theme")
+            out["stored_default_dark"] = stored.get("frontend_default_dark_theme")
+        else:
+            # Never saved: nothing was ever chosen, so the running value is it.
+            out["stored_default"] = out["default"]
+            out["stored_default_dark"] = out["default_dark"]
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("frontend theme collect failed: %s", err)
+    return out
+
+
+def _collect_branding(hass: HomeAssistant) -> dict:
+    """The sidebar branding in force: whether it is on, and the name it shows."""
+    try:
+        from . import branding
+
+        config = branding._config(hass)
+        return {"enabled": bool(config.get("enabled")), "title": config.get("title")}
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("branding collect failed: %s", err)
+        return {}
 
 
 MAX_LOG_RECORDS = 50
