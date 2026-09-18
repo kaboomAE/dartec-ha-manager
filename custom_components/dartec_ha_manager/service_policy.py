@@ -278,8 +278,8 @@ def check_guarded(cmd: dict, options: dict) -> tuple[str, str] | None:
     extra = sorted(set(cmd) - allowed - _ENVELOPE_KEYS)
     if extra:
         return ("invalid", f"'{action}' is refused: unexpected field(s) "
-                           f"{', '.join(extra)}. A guarded update carries a version "
-                           "and nothing else.")
+                           f"{', '.join(extra)}. It carries only: "
+                           f"{', '.join(sorted(allowed))}.")
     if "restart" in cmd and not isinstance(cmd["restart"], bool):
         return ("invalid", f"'{action}' is refused: restart must be true or false.")
     pattern = GUARDED_VERSION_FORMATS.get(action)
