@@ -45,6 +45,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `const.py` | `DOMAIN`, config keys, `SNAPSHOT_INTERVAL_S = 60`, reconnect backoff bounds |
 | `cloud_link.py` | The outbound WebSocket: connect, auth, push a snapshot every 60 s, handle inbound commands, reconnect with backoff |
 | `collector.py` | Builds the snapshot. Core version, integrations, add-ons, HACS, automations, dashboards, logs, host metrics, backups, areas, devices, entities |
+| `device_health.py` | Batteries (one row per device, lowest first) and devices that stopped answering, summarised for the manager's alerts; **the rules for telling an expected-unavailable entity from a dead device live in its docstring**. No module-level HA imports |
 | `commands.py` | Command dispatch — routes an inbound action to its handler |
 | `ws_bridge.py` | Talks to HA's own websocket/REST over loopback with a short-lived self-minted token |
 | `hardware.py` | Host metrics; includes the ARM64 CPU-model decoding |
@@ -133,6 +134,7 @@ on Monday.
   fired, and the log shows no `failed_unload`, `OperationNotAllowed` or
   unretrieved task exception. The stub also replaces the agent's GitHub check,
   since the container must not depend on GitHub accepting a made-up token.
+- **Batteries and offline devices** (added 2026-09-18, 0.18.0): `device_health_setup.py` takes demo devices down, labels one `dartec_expected_offline` and drains a battery to 4%, all through Home Assistant's own APIs. The run fails unless `offline_devices` is exactly the one fully-down device — not the labelled one, not the device with one dead entity out of two, not Push's never-pressed button, not the Backup service device — and `batteries` equals every registered battery-percentage sensor Home Assistant shows, lowest first, with the demo's `battery_charging` sensor left out.
 - **A canary integration** (`tests/live/canary/`) deliberately does both
   wrong things, and the run fails unless Home Assistant reports the canary for
   them (the mapping one only from 2026.9). Without it a clean log could mean
@@ -364,7 +366,8 @@ check.
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
 | 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. **Swapping broke HACS on a real install (#8): do not run 0.17.0 where the manager pushes tokens** |
-| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner. Unreleased |
+| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner |
+| 0.18.0 | The snapshot carries `batteries` (one row per device: level and/or the binary low flag, lowest first, capped at 200, `battery_count` the true total; phones' `mobile_app` batteries left out) and `offline_devices` (devices whose every judged entity is `unavailable`/`unknown`, with the time the last went down, capped at 100, plus `offline_count` and `devices_judged`), summarised by `device_health.py` so the manager can alert on low batteries and devices offline for hours without being sent every entity's state; a failed pass sends `device_health_error` rather than empty lists that would read as "all fine"; registry entities only. Unreleased |
 
 ---
 
