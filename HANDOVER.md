@@ -47,7 +47,8 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `collector.py` | Builds the snapshot. Core version, integrations, add-ons, HACS, automations, dashboards, logs, host metrics, backups, areas, devices, entities |
 | `commands.py` | Command dispatch — routes an inbound action to its handler |
 | `ws_bridge.py` | Talks to HA's own websocket/REST over loopback with a short-lived self-minted token |
-| `hardware.py` | Host metrics; includes the ARM64 CPU-model decoding |
+| `hardware.py` | Host metrics; includes the ARM64 CPU-model decoding. Also the slow-cadence machine identity (Supervisor board, machine, MAC, the data disk) and disk health, cached so a snapshot only copies a dictionary |
+| `disk_health.py` | What the disk and the machine's temperatures can be read from **without new privileges**: the Supervisor API, the host's UDisks2 over D-Bus (read-only, SMART for NVMe and ATA), and sysfs (hwmon sensors, eMMC life time). No module-level HA imports |
 | `lovelace_cmds.py` | Dashboard read/create/save |
 | `registry_cmds.py` | Areas, floors, device and entity assignment |
 | `user_cmds.py` | Home Assistant user accounts |
@@ -364,7 +365,8 @@ check.
 | 0.11.0 | Service allowlist moved to the `domain.service` pair (default-deny, permanently-blocked tier); homeowner maintenance window for consequential actions; house-wide targeting refused; commands logged to the home's own logbook; config flow refuses non-https |
 | 0.16.0 | Commissioning lasts until the install is marked complete (`complete_commissioning` service, the switch turned off, or the manager's close-only `commissioning_complete`), capped at `COMMISSIONING_DAYS` = 30 unless a different `commissioning_days` (or a fresh period) is set in the options flow on the home, stored in the entry's options; the switch reads on while it is open and reports `commissioning_ends_at`; the snapshot carries `commissioning` so the manager can warn about installs left open; offsite backup copies need the home's `offsite_backups` opt-in instead of a maintenance window |
 | 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. **Swapping broke HACS on a real install (#8): do not run 0.17.0 where the manager pushes tokens** |
-| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner. Unreleased |
+| 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner |
+| 0.18.0 | The snapshot says which machine this is and how its disk is holding up. `hardware` gains `ha_uuid`, `machine`, `supervisor_arch`, `mac`, `chassis` and `storage` (model, vendor, serial, size, type, bus, device), read every 6 h; `disk_health` (wear, spare, media errors, bad sectors, power-on hours, temperature and the drive's own limits, with the sources they came from, or `unavailable` saying why) every 15 min; `host.disk_temp_c` and `host.soc_temp_c` every cycle. Nothing new is asked of the home: see `disk_health.py`. Unreleased; publishing needs the owner's OK |
 
 ---
 

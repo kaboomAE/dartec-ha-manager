@@ -189,3 +189,134 @@ def _os_release_name() -> str | None:
         return None
     match = re.search(r'^PRETTY_NAME="?([^"\n]+)"?', text, re.MULTILINE)
     return match.group(1) if match else None
+
+
+# --- Identity and disk health, on a slow cadence ------------------------------
+#
+# What the manager uses to know which machine a home runs on, and to notice
+# when that changes (a swapped disk, a re-imaged box). The reads, and what
+# they cost, are described in disk_health.py. Cached here so the 60-second
+# snapshot only ever pays for a dictionary copy.
+
+_IDENTITY: dict | None = None
+_IDENTITY_AT = 0.0
+_HEALTH: dict | None = None
+_HEALTH_AT = 0.0
+
+SUPERVISOR_URL = "http://supervisor"
+
+
+async def _supervisor_get(hass: HomeAssistant, path: str) -> dict:
+    """One Supervisor GET, or {} — a missing endpoint on an older Supervisor
+    must not cost the rest of the identity."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return {}
+    try:
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        session = async_get_clientsession(hass)
+        async with session.get(f"{SUPERVISOR_URL}{path}", timeout=15,
+                               headers={"Authorization": f"Bearer {token}"}) as resp:
+            if resp.status != 200:
+                return {}
+            return (await resp.json()).get("data") or {}
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("supervisor %s failed: %s", path, err)
+        return {}
+
+
+async def async_collect_identity(hass: HomeAssistant) -> dict:
+    """Which machine this is: the fields the manager compares to notice a
+    different machine, plus what the storage device is. Cached for
+    disk_health.IDENTITY_TTL_S, or HEALTH_TTL_S when the storage could not be
+    read, so a Supervisor that was busy at startup is asked again soon."""
+    import time
+
+    from . import disk_health
+
+    global _IDENTITY, _IDENTITY_AT
+    now = time.monotonic()
+    if _IDENTITY is not None:
+        ttl = disk_health.IDENTITY_TTL_S if _IDENTITY.get("storage") else disk_health.HEALTH_TTL_S
+        if now - _IDENTITY_AT < ttl:
+            return _IDENTITY
+
+    identity: dict = {}
+    try:
+        from homeassistant.helpers import instance_id
+
+        # The install's own uuid (what mDNS advertises and the onboarding app
+        # finds a box by). A re-imaged box is a new install with a new one.
+        identity["ha_uuid"] = await instance_id.async_get(hass)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("instance id failed: %s", err)
+
+    try:
+        if os.environ.get("SUPERVISOR_TOKEN"):
+            info = await _supervisor_get(hass, "/info")
+            os_info = await _supervisor_get(hass, "/os/info")
+            host = await _supervisor_get(hass, "/host/info")
+            network = await _supervisor_get(hass, "/network/info")
+            hardware_info = await _supervisor_get(hass, "/hardware/info")
+            identity["machine"] = info.get("machine")
+            identity["supervisor_arch"] = info.get("arch")
+            identity["chassis"] = host.get("chassis")
+            identity["mac"] = disk_health.primary_mac(network)
+            drive = disk_health.pick_data_drive(hardware_info, os_info.get("data_disk"))
+            if drive:
+                device = next((disk_health.base_device(fs.get("device"))
+                               for fs in drive.get("filesystems") or [] if fs.get("device")), None)
+                kind = await hass.async_add_executor_job(
+                    lambda: disk_health.storage_type(
+                        device, bus=drive.get("connection_bus"), removable=drive.get("removable")))
+                identity["storage"] = disk_health.storage_from_drive(drive, kind)
+        else:
+            def _local() -> dict:
+                device = disk_health.config_device()
+                return {"storage": disk_health.sysfs_storage(device),
+                        "mac": disk_health.default_route_mac()}
+
+            identity.update(await hass.async_add_executor_job(_local))
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("identity collect failed: %s", err)
+
+    _IDENTITY, _IDENTITY_AT = identity, now
+    return identity
+
+
+async def async_collect_disk_health(hass: HomeAssistant, identity: dict) -> dict:
+    """The data disk's health, cached for disk_health.HEALTH_TTL_S."""
+    import time
+
+    from . import disk_health
+
+    global _HEALTH, _HEALTH_AT
+    now = time.monotonic()
+    if _HEALTH is not None and now - _HEALTH_AT < disk_health.HEALTH_TTL_S:
+        return _HEALTH
+    storage = identity.get("storage") or {}
+    try:
+        udisks = await disk_health.read_udisks(storage.get("id"), storage.get("serial")) \
+            if os.environ.get("SUPERVISOR_TOKEN") else \
+            {"unavailable": "not Home Assistant OS: no host UDisks2 to ask"}
+        sysfs = await hass.async_add_executor_job(
+            disk_health.sysfs_health, storage.get("device"), storage.get("type") or "")
+        health = disk_health.merge_health(storage, udisks, sysfs, time.time())
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("disk health collect failed: %s", err)
+        health = {"unavailable": f"collection failed: {type(err).__name__}"}
+    _HEALTH, _HEALTH_AT = health, now
+    return health
+
+
+async def async_collect_temperatures(hass: HomeAssistant, identity: dict) -> dict:
+    """Disk and processor temperature, every cycle: two sysfs reads."""
+    from . import disk_health
+
+    try:
+        return await hass.async_add_executor_job(
+            disk_health.read_temperatures, (identity.get("storage") or {}).get("device"))
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("temperature read failed: %s", err)
+        return {}
