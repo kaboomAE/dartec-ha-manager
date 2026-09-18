@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.11.0
+**Current version**: 0.17.1 released; 0.18.0 on main, unreleased
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -59,6 +59,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
 | `tunnel_cmds.py` | Cloudflare tunnel setup on the home |
 | `branding.py` | Installer branding in the sidebar and tab title, plus its config endpoint |
+| `ha_update.py` | Guarded Core/OS updates: backup, update, resume after restart, health check, rollback, restore. The job lives in a `Store` and is reported in `snapshot.ha_update`. Its policy (`GUARDED_ACTIONS`, the opt-out) is in `service_policy.py` |
 | `version.py` | Version comparison, and the agent's own running version (from HA's loader). No module-level HA imports, so CI can test it directly |
 | `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
 | `www/` | Brand SVGs served as static assets |
@@ -369,6 +370,7 @@ check.
 | 0.17.0 | Fleet-wide HACS token rotation: the snapshot reports `hacs_token.token_fingerprint` (first 16 hex of SHA-256, never the token), and `hacs_token_set` verifies a new token with GitHub, replaces only it in an existing HACS entry, reloads, and rolls back to the previous token if HACS does not load; swaps and rollbacks logbooked by fingerprint; routine pending the owner's sign-off. **Swapping broke HACS on a real install (#8): do not run 0.17.0 where the manager pushes tokens** |
 | 0.17.1 | `hacs_token_set` unloads HACS through Home Assistant before writing its entry and sets it up after, so HACS's own reload listener no longer races the swap (#8); refuses `hacs_busy` and `hacs_not_loaded` without touching anything; 30 s load wait so a swap and its rollback fit the manager's timeout; routine, confirmed by the owner |
 | 0.18.0 | The snapshot carries `batteries` (one row per device: level and/or the binary low flag, lowest first, capped at 200, `battery_count` the true total; phones' `mobile_app` batteries left out) and `offline_devices` (devices whose every judged entity is `unavailable`/`unknown`, with the time the last went down, capped at 100, plus `offline_count` and `devices_judged`), summarised by `device_health.py` so the manager can alert on low batteries and devices offline for hours without being sent every entity's state; a failed pass sends `device_health_error` rather than empty lists that would read as "all fine"; registry entities only. Unreleased |
+| 0.18.0 | **Guarded Home Assistant updates** (`ha_update.py`, owner decision 2026-09-18): `ha_core_update` / `ha_os_update` to one exact stable, newer, Supervisor-offered version, **without a maintenance window**. They take a full backup (confirmed), update, resume after the restart from a `Store`, run a health check, and roll back if it fails: Core by version, then by restoring the backup; the OS by its other boot slot. Every step goes to the logbook and to `snapshot.ha_update`. The homeowner can opt out with the new `switch.dartec_approved_updates` or the options flow (`guarded_updates`, on by default). Supervised installs refuse OS updates. `maintenance_status` reports `guarded`. Calls on the integration's own entities, and area/device/floor/label targeting, are refused (#11). Snapshots go out at once on each update step (`SIGNAL_SNAPSHOT_NOW`).. Also in 0.18.0: The snapshot carries `batteries` (one row per device: level and/or the binary low flag, lowest first, capped at 200, `battery_count` the true total; phones' `mobile_app` batteries left out) and `offline_devices` (devices whose every judged entity is `unavailable`/`unknown`, with the time the last went down, capped at 100, plus `offline_count` and `devices_judged`), summarised by `device_health.py` so the manager can alert on low batteries and devices offline for hours without being sent every entity's state; a failed pass sends `device_health_error` rather than empty lists that would read as "all fine"; registry entities only. Unreleased |
 | 0.19.0 | The snapshot says which machine this is and how its disk is holding up. `hardware` gains `ha_uuid`, `machine`, `supervisor_arch`, `mac`, `chassis` and `storage` (model, vendor, serial, size, type, bus, device), read every 6 h; `disk_health` (wear, spare, media errors, bad sectors, power-on hours, temperature and the drive's own limits, with the sources they came from, or `unavailable` saying why) every 15 min; `host.disk_temp_c` and `host.soc_temp_c` every cycle. Nothing new is asked of the home: see `disk_health.py`. Unreleased; publishing needs the owner's OK |
 
 ---

@@ -103,6 +103,14 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     else:
         snapshot["addons"] = []
 
+    try:
+        from . import ha_update
+
+        snapshot["ha_update"] = ha_update.snapshot_section(
+            hass, supervisor.get("install") if supervisor else None)
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("ha_update collect failed: %s", err)
+
     return snapshot
 
 
@@ -465,6 +473,7 @@ async def _collect_supervisor(hass: HomeAssistant) -> dict | None:
         core_info = await get("/core/info")
         os_info = await get("/os/info")
         supervisor_info = await get("/supervisor/info")
+        info = await get("/info")
 
         addons = [{
             "slug": addon.get("slug"),
@@ -492,10 +501,29 @@ async def _collect_supervisor(hass: HomeAssistant) -> dict | None:
             },
             "core_update_available": core_info.get("update_available"),
             "core_latest_version": core_info.get("version_latest"),
+            # The shape ha_update.install_info returns, from the calls above.
+            "install": _install_view(info, core_info, os_info),
         }
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("supervisor collect failed: %s", err)
         return None
+
+
+def _install_view(info: dict, core_info: dict, os_info: dict) -> dict:
+    haos = bool(info.get("hassos"))
+    view = {"install": "haos" if haos else "supervised",
+            "core": {"version": core_info.get("version"),
+                     "latest": core_info.get("version_latest"),
+                     "update_available": bool(core_info.get("update_available"))}}
+    if haos:
+        from .ha_update import running_os_version
+
+        view["os"] = {"version": running_os_version(os_info),
+                      "latest": os_info.get("version_latest"),
+                      "update_available": bool(os_info.get("update_available")),
+                      "boot": os_info.get("boot"),
+                      "boot_slots": os_info.get("boot_slots") or {}}
+    return view
 
 
 def _collect_host_psutil() -> dict:

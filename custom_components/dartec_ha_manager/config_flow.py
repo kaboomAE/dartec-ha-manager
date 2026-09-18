@@ -21,7 +21,7 @@ from .maintenance import (MAX_COMMISSIONING_DAYS, OPT_COMMISSIONING_DAYS,
                           OPT_COMMISSIONING_UNTIL, OPT_RESTART_COMMISSIONING,
                           OPT_STANDING_CONSENT, apply_commissioning_options,
                           commissioning_days, commissioning_deadline, logbook)
-from .service_policy import OPT_OFFSITE_BACKUPS
+from .service_policy import OPT_GUARDED_UPDATES, OPT_OFFSITE_BACKUPS, guarded_enabled
 
 # A bare "http://" URL is silently downgraded to plaintext ws:// by CloudLink,
 # which would put the pairing token — the key to this whole home — on the wire
@@ -159,6 +159,10 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
     question. Unattended support is about what Dartec may *do* in the house;
     offsite copies are about the house's data leaving it. A customer can
     reasonably want either without the other, and both default to off.
+
+    Approved Home Assistant updates are the one setting here that is on by
+    default, and the homeowner's to turn off: see
+    service_policy.GUARDED_ACTIONS for why.
     """
 
     def __init__(self, config_entry) -> None:
@@ -169,6 +173,11 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
             options = dict(self._entry.options)
             options[OPT_STANDING_CONSENT] = bool(user_input.get(OPT_STANDING_CONSENT))
             options[OPT_OFFSITE_BACKUPS] = bool(user_input.get(OPT_OFFSITE_BACKUPS))
+            guarded = bool(user_input.get(OPT_GUARDED_UPDATES, True))
+            if guarded != guarded_enabled(options):
+                logbook(self.hass, "Approved Home Assistant updates from Dartec turned "
+                                   + ("on" if guarded else "off") + " in the options")
+            options[OPT_GUARDED_UPDATES] = guarded
             # The commissioning deadline is only rewritten when the length
             # actually changes on a running period, or a restart is ticked —
             # saving the form for any other reason must not quietly extend it.
@@ -188,6 +197,8 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
                              default=options.get(OPT_STANDING_CONSENT, False)): bool,
                 vol.Optional(OPT_OFFSITE_BACKUPS,
                              default=options.get(OPT_OFFSITE_BACKUPS, False)): bool,
+                vol.Optional(OPT_GUARDED_UPDATES,
+                             default=guarded_enabled(options)): bool,
                 vol.Optional(OPT_COMMISSIONING_DAYS,
                              default=commissioning_days(options)):
                     vol.All(vol.Coerce(int),
