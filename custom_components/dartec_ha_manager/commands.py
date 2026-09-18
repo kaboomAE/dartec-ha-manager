@@ -213,6 +213,10 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             # point of the logbook.
             maintenance.logbook(hass, f"Dartec staged automation blueprint "
                                       f"'{result.get('path')}'; nothing uses it yet")
+        elif action == "lovelace_update" and result.get("ok"):
+            # Not consequential enough to need consent, but it is a name the
+            # household reads every day changing under them.
+            maintenance.logbook(hass, f"Dartec {result.get('detail')}")
         elif action == "hacs_token_set":
             # Routine, so no consent line above — but a credential in their
             # house changed, or was changed and put back, and they should be

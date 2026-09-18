@@ -93,8 +93,44 @@ async def lovelace_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return result
 
 
+async def lovelace_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    """Rename a storage dashboard (its sidebar title, and optionally icon).
+
+    Creating a dashboard is the only other place a title is set, so without
+    this a title given at rollout could never be corrected: that is how a
+    home came to read "DarTec Dashboard" (dartec-ha-manager#25). Goes through
+    Home Assistant's own websocket commands, like create, because the live
+    dashboards collection is not reachable in-process.
+    """
+    url_path = (cmd.get("url_path") or "").strip()
+    title = str(cmd.get("title") or "").strip()[:100]
+    if not url_path or not title:
+        return {"ok": False, "detail": "url_path and title required"}
+    listed = await call_own_ws(hass, {"type": "lovelace/dashboards/list"})
+    if not listed.get("success"):
+        return {"ok": False, "detail": f"could not list dashboards: {listed.get('error')}"}
+    # The collection's id is derived from the url_path but is not always
+    # equal to it, so it is looked up rather than assumed.
+    item = next((d for d in listed.get("result") or [] if d.get("url_path") == url_path), None)
+    if item is None:
+        return {"ok": False,
+                "detail": f"dashboard '{url_path}' not found, or not a storage dashboard"}
+    update: dict[str, Any] = {"type": "lovelace/dashboards/update",
+                              "dashboard_id": item["id"], "title": title}
+    if cmd.get("icon"):
+        update["icon"] = str(cmd["icon"])
+    result = await call_own_ws(hass, update)
+    if not result.get("success"):
+        error = result.get("error") or {}
+        return {"ok": False, "detail": f"rename failed: {error.get('message', error)}",
+                "previous_title": item.get("title")}
+    return {"ok": True, "previous_title": item.get("title"),
+            "detail": f"renamed dashboard '{url_path}' from '{item.get('title')}' to '{title}'"}
+
+
 HANDLERS = {
     "lovelace_get": lovelace_get,
     "lovelace_save": lovelace_save,
     "lovelace_create": lovelace_create,
+    "lovelace_update": lovelace_update,
 }

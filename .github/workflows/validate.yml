@@ -1,4 +1,4 @@
-# Validation CI for the DarTec HA Manager agent.
+# Validation CI for the Dartec HA Manager agent.
 #
 # - hassfest: Home Assistant's own manifest/structure validation, always against
 #   the CURRENT dev release — catches manifest schema drift.
@@ -6,6 +6,9 @@
 # - live: the agent from this commit, paired to a stub manager inside real
 #   Home Assistant containers — see tests/live/run_live.py.
 # - live-household: "My Home", the household panel, as several real people.
+# - live-brand: the brand's old spelling staged on a home (a stored default
+#   theme under the old name, the entry title, a dashboard title) and put
+#   right - see tests/live/run_live_brand.py.
 # - live-update: guarded Core/OS updates inside real Home Assistant, with a
 #   stand-in Supervisor; each update, rollback and restore really restarts
 #   Home Assistant — see tests/live/run_live_update.py. About five minutes.
@@ -124,3 +127,21 @@ jobs:
           name: live-update-${{ matrix.version }}
           path: live-artifacts
           if-no-files-found: ignore
+
+  live-brand:
+    # The brand's old spelling, reported and put right, in real Home
+    # Assistant - see tests/live/run_live_brand.py. About four minutes a
+    # version: the rename rides the snapshot cadence.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.8.3", "2026.9.2", "stable"]' || '["2026.8.3", "2026.9.2"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      - run: python tests/live/run_live_brand.py ${{ matrix.version }}

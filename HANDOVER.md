@@ -142,6 +142,7 @@ on Monday.
 - **The full entity inventory** (added 2026-09-18, 0.19.0): after the HACS swap the stub reads every entity the way the manager does (`registry_query` with `include_unregistered`, a 1,000-row page). The run fails unless it holds every entity Home Assistant's REST API lists, its unregistered rows are exactly the snapshot's `unregistered_entities`, the registry count plus the unregistered count is its total, and its digest is the snapshot's.
 - **Batteries and offline devices** (added 2026-09-18, 0.18.0): `device_health_setup.py` takes demo devices down, labels one `dartec_expected_offline` and drains a battery to 4%, all through Home Assistant's own APIs. The run fails unless `offline_devices` is exactly the one fully-down device — not the labelled one, not the device with one dead entity out of two, not Push's never-pressed button, not the Backup service device — and `batteries` equals every registered battery-percentage sensor Home Assistant shows, lowest first, with the demo's `battery_charging` sensor left out.
 - **"My Home"** (added 2026-09-18, 0.20.0) has its own runner, `run_live_household.py` (driver: `household_driver.py`, run inside the container). It signs in as the owner, an admin, a regular user, a guest and the `dartec` account and checks through HA's own commands (`config/auth/list`, `person/list`, `frontend/get_user_data` as the person, the logbook) that create, edit, pause (signs them out), resume, password reset, first dashboard and remove all do what they say, that every guard refuses, that a regular user is neither sent the panel nor answered, and that the snapshot's `household` is counts only. `household_screenshots.py` regenerates the guide's pictures from a `--keep` container (needs Playwright).
+- **The brand's old spelling** (added 2026-09-19, 0.21.0, dartec-ha-manager#25) has its own runner, `run_live_brand.py` (driver: `brand_driver.py`, in the container). It starts HA with `DarTec` stored as the default theme and only `Dartec` loaded, as a home themed under dartec-theme v1.0.0 is, and checks that the snapshot's `frontend_theme` says so (`stored_default: DarTec`, running `default`, `Dartec` available) and that `branding` carries the sidebar title. It then retitles the agent's entry "DarTec: ...", reloads it, and checks the agent corrected it; renames a "DarTec Dashboard" with `lovelace_update` and checks the answer, the logbook line, Home Assistant's own dashboard list and the next snapshot.
 - **A canary integration** (`tests/live/canary/`) deliberately does both
   wrong things, and the run fails unless Home Assistant reports the canary for
   them (the mapping one only from 2026.9). Without it a clean log could mean
@@ -232,7 +233,7 @@ The full surface as of 0.10.4:
 
 ```
 addon_restart, addon_start, addon_stop, call_service,
-lovelace_get, lovelace_save, lovelace_create,
+lovelace_get, lovelace_save, lovelace_create, lovelace_update,
 hacs_install, hacs_list, hacs_token_set, theme_set, automation_create, branding_set,
 floor_upsert, floor_delete, area_upsert, area_delete,
 devices_assign, entities_assign,
@@ -241,6 +242,8 @@ agent_update, ha_restart,
 tunnel_status, tunnel_setup, tunnel_stop,
 backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 ```
+
+`lovelace_update` (0.21.0) renames a storage dashboard: payload `{url_path, title, icon?}`, answered with `previous_title`, and a line in the household's logbook. Rollout sets a title only when it creates a dashboard, so this is the one way to correct one afterwards (dartec-ha-manager#25). Like the mutating blueprint commands it is not in the manager's generic `ALLOWED_ACTIONS`: it has its own audited route, `PATCH /api/instances/{id}/lovelace`.
 
 `hacs_token_set` (0.17.0, fixed in 0.17.1) replaces the GitHub token in the
 home's existing HACS config entry — payload `{token, fingerprint}`, where the
