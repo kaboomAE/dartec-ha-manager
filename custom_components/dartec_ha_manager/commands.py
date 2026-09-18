@@ -33,7 +33,8 @@ from homeassistant.core import HomeAssistant
 
 from . import maintenance
 from .const import DOMAIN
-from .service_policy import (GUARDED_ACTIONS, check_call_service, check_guarded,
+from .service_policy import (GUARDED_ACTIONS, GUARDED_WITHOUT_CONSENT,
+                             check_call_service, check_guarded,
                              check_opt_in, check_own_entities, is_sensitive)
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         # limits, is in service_policy.GUARDED_ACTIONS. They answer to the
         # home's opt-out and to a strict shape instead, and are logged whether
         # they run or not, with the version they were asked for.
-        if action in GUARDED_ACTIONS:
+        if action in GUARDED_ACTIONS and action not in GUARDED_WITHOUT_CONSENT:
             what = f"{action} {cmd.get('version', '')}".strip()
             refused = check_guarded(cmd, maintenance.entry_options(hass))
             if refused:
@@ -130,7 +131,16 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             return result
 
         sensitive = is_sensitive(cmd)
-        if sensitive and not window_open:
+        guarded_run = False
+        if sensitive and not window_open and action in GUARDED_WITHOUT_CONSENT:
+            # No consent, but this action may still run in its guarded shape
+            # (service_policy.GUARDED_ACTIONS): nothing but the listed keys,
+            # and never if the homeowner has turned guarded updates off.
+            refused = check_guarded(cmd, maintenance.entry_options(hass))
+            if refused:
+                return _refuse(hass, str(action), refused[1], code=refused[0])
+            guarded_run = True
+        elif sensitive and not window_open:
             # `force` in the command is read only to answer it. A cloud that
             # asks to skip consent is told no in the same words as one that
             # did not ask, because the answer does not depend on the asking.
@@ -142,7 +152,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                            "install is marked complete, "
                            f"{maintenance.COMMISSIONING_DAYS} days by default; for a site "
                            "that wants unattended support, turn it on in this "
-                           "integration's options.)")
+                           "integration's options.)", code="consent")
 
         refusal = check_opt_in(cmd, maintenance.entry_options(hass))
         if refusal:
@@ -178,7 +188,12 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         else:
             return {"ok": False, "detail": f"unsupported action '{action}'"}
 
-        if sensitive:
+        if guarded_run:
+            maintenance.logbook(hass, f"Dartec ran '{action}' as an approved update "
+                                      "(latest release, upgrade only), without the "
+                                      "maintenance switch: "
+                                      f"{result.get('detail') or result.get('ok')}")
+        elif sensitive:
             # Which consent was relied on, not just that there was some. If a
             # homeowner ever asks why something ran while they were out, the
             # answer is in their own logbook, in their own words.

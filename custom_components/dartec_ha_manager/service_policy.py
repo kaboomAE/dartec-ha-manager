@@ -197,7 +197,7 @@ OPT_IN_ACTIONS = {
 # * **Always in the logbook**, with the target version: accepted, each step,
 #   the verdict, and any refusal.
 # * **The homeowner can turn it off**, locally: the "Allow Dartec to install
-#   approved Home Assistant updates" switch, or the same setting in this
+#   approved updates" switch, or the same setting in this
 #   integration's options (OPT_GUARDED_UPDATES). On by default, because the
 #   point is that updates reach homes nobody is attending. Off stops the next
 #   update; one already under way finishes, rollback included, because an
@@ -211,7 +211,26 @@ OPT_IN_ACTIONS = {
 GUARDED_ACTIONS: dict[str, frozenset[str]] = {
     "ha_core_update": frozenset({"version", "job_id", "rollout_id"}),
     "ha_os_update": frozenset({"version", "job_id", "rollout_id"}),
+    # The owner's decision, 2026-09-18, asked and answered in the session
+    # that built the manager's staged agent rollout: agent updates get the
+    # same exception. Why: a home whose commissioning has closed never took
+    # an agent update again unless someone at the house switched support on,
+    # which is how a live home was still on 0.14.6 with 0.17.x released.
+    # Its shape is narrower than the others because agent_update already is:
+    # it installs the *latest* release of this integration's own repository
+    # through HACS, and HACS refuses a downgrade unless `allow_downgrade` is
+    # sent, which is not in the list below. The manager stages it (bench ->
+    # pilot -> batches) and stops at the first home that does not come back
+    # on the new version.
+    "agent_update": frozenset({"restart", "job_id", "rollout_id"}),
 }
+
+# Guarded actions that are ALSO sensitive. With consent they run exactly as
+# they did before the exception, with every option the command has (a
+# window-backed agent_update may still downgrade). Without consent they run
+# only in the guarded shape above, under the homeowner's opt-out. Reversing
+# the agent decision is two lines: remove "agent_update" here and above.
+GUARDED_WITHOUT_CONSENT = frozenset({"agent_update"})
 # The transport's own keys on every command.
 _ENVELOPE_KEYS = frozenset({"type", "id", "action"})
 
@@ -219,6 +238,9 @@ _ENVELOPE_KEYS = frozenset({"type", "id", "action"})
 # the mirror image of check_opt_in's "only True counts": in both, only the
 # homeowner's explicit choice moves the default.
 OPT_GUARDED_UPDATES = "guarded_updates"
+# What the homeowner sees. It covers the Dartec agent too since 2026-09-18,
+# so it no longer says "Home Assistant" updates.
+GUARDED_SWITCH_NAME = "Allow Dartec to install approved updates"
 
 # Stable releases only. Core is YYYY.M.patch; the OS is major.minor.
 CORE_VERSION_RE = re.compile(r"^20\d{2}\.(?:1[0-2]|[1-9])\.\d{1,3}$")
@@ -252,12 +274,14 @@ def check_guarded(cmd: dict, options: dict) -> tuple[str, str] | None:
         return None
     if not guarded_enabled(options):
         return ("consent", f"'{action}' is refused: the homeowner has turned off "
-                           "'Allow Dartec to install approved Home Assistant updates'.")
+                           f"'{GUARDED_SWITCH_NAME}'.")
     extra = sorted(set(cmd) - allowed - _ENVELOPE_KEYS)
     if extra:
         return ("invalid", f"'{action}' is refused: unexpected field(s) "
-                           f"{', '.join(extra)}. A guarded update carries a version "
-                           "and nothing else.")
+                           f"{', '.join(extra)}. It carries only: "
+                           f"{', '.join(sorted(allowed))}.")
+    if "restart" in cmd and not isinstance(cmd["restart"], bool):
+        return ("invalid", f"'{action}' is refused: restart must be true or false.")
     pattern = GUARDED_VERSION_FORMATS.get(action)
     if pattern is not None and not pattern.match(str(cmd.get("version") or "")):
         return ("invalid", f"'{action}' is refused: '{cmd.get('version')}' is not an "

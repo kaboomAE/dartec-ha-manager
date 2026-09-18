@@ -12,8 +12,8 @@ from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
 
 # The homeowner's controls over Dartec: "Allow Dartec support" (the
-# maintenance window) and "Allow Dartec to install approved Home Assistant
-# updates" (the opt-out from guarded updates). They are the only entities this
+# maintenance window) and "Allow Dartec to install approved updates" (the
+# opt-out from guarded updates). They are the only entities this
 # integration creates.
 PLATFORMS = [Platform.SWITCH]
 

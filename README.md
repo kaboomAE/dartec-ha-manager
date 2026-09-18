@@ -77,10 +77,17 @@ install rather than a number somebody remembered to update in two places.
   rolled back: Core to the version it had, restoring the backup if needed;
   the OS by booting its previous version. Every step is written to your
   logbook. This is **on by default**; switch **Allow Dartec to install
-  approved Home Assistant updates** off, or turn it off in this integration's
-  options, and Dartec will not start another one. It cannot be used to restart
-  Home Assistant for any other reason or to install anything else. Supervised
+  approved updates** off, or turn it off in this integration's options, and
+  Dartec will not start another one. It cannot be used to restart Home
+  Assistant for any other reason or to install anything else. Supervised
   installs take Core updates only; Container and Core installs take none.
+- **Updates of this integration** follow the same rule (since 0.19.0): with
+  approved updates on, Dartec can update this integration to its **latest
+  release** without the maintenance window, upgrade only, and it restarts Home
+  Assistant once to load it. Dartec updates one test home, then one of yours,
+  then the rest, stopping at the first home that does not come back healthy.
+  Turning **Allow Dartec to install approved updates** off stops it; with
+  **Allow Dartec support** on, an update runs as it always did.
 - Calls that would target the whole house at once (`entity_id: all`, or no
   target at all) are refused, as are calls that target by area, device, floor
   or label, and calls on this integration's own switches: those are yours.

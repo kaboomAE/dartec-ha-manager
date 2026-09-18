@@ -37,14 +37,14 @@
           "offsite_backups": "Copy backups offsite to Dartec",
           "commissioning_days": "Commissioning period (days)",
           "restart_commissioning": "Start a new commissioning period now",
-          "guarded_updates": "Allow Dartec to install approved Home Assistant updates"
+          "guarded_updates": "Allow Dartec to install approved updates"
         },
         "data_description": {
           "unattended_support": "Dartec may operate locks, covers, the alarm and restarts without someone switching 'Allow Dartec support' on first.",
           "offsite_backups": "Dartec may copy this home's backups, including its configuration and history, to Dartec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch.",
           "commissioning_days": "How long commissioning lasts after pairing, 30 by default. Changing it moves the deadline of a period that is still running; it does not reopen one that has ended.",
           "restart_commissioning": "Opens commissioning for the period above, starting now, even if it was already marked complete or has expired.",
-          "guarded_updates": "Dartec may update Home Assistant and its operating system to a version it has tested, without the maintenance switch, so security fixes are not held up. A full backup is taken first, the home is checked afterwards, and an unhealthy update is rolled back. Each step is written to the logbook. Turning this off stops the next update; one already under way still finishes or rolls back."
+          "guarded_updates": "Dartec may update Home Assistant and its operating system to a version it has tested, and this Dartec integration to its latest release, without the maintenance switch, so security fixes are not held up. A full backup is taken first, the home is checked afterwards, and an unhealthy update is rolled back. Each step is written to the logbook. Turning this off stops the next update; one already under way still finishes or rolls back."
         }
       }
     }

@@ -268,7 +268,9 @@ def os_cmd(version="16.3"):
 
 class TestPolicy:
     def test_guarded_actions_need_no_window_and_are_not_sensitive(self):
-        for action in service_policy.GUARDED_ACTIONS:
+        # agent_update is the one guarded action that is also sensitive: with
+        # consent it keeps its full path. See TestGuardedAgentUpdate.
+        for action in set(service_policy.GUARDED_ACTIONS) - service_policy.GUARDED_WITHOUT_CONSENT:
             assert not service_policy.is_sensitive({"action": action})
             assert action not in service_policy.SENSITIVE_ACTIONS
 
@@ -315,7 +317,7 @@ class TestPolicy:
 
     def test_status_reports_the_tier(self):
         assert service_policy.guarded_status({}) == {
-            "enabled": True, "actions": ["ha_core_update", "ha_os_update"]}
+            "enabled": True, "actions": ["agent_update", "ha_core_update", "ha_os_update"]}
         assert service_policy.guarded_status({"guarded_updates": False})["enabled"] is False
 
 
@@ -532,3 +534,73 @@ class TestRestarts:
 
 async def _dies(hass, job):
     raise Died()
+
+
+# ── the agent's own update (owner decision 2026-09-18) ──────────────────────
+
+def agent_cmd(**extra):
+    return {"type": "command", "id": "a1", "action": "agent_update", "restart": True,
+            "rollout_id": "0123456789abcdef0123456789abcdef", **extra}
+
+
+class TestGuardedAgentUpdate:
+    """agent_update keeps its consent path, and without consent may still run
+    in the guarded shape: the latest release, upgrade only, and never once the
+    homeowner has turned approved updates off."""
+
+    @pytest.fixture
+    def ran(self, monkeypatch):
+        from dartec_ha_manager import home_cmds
+
+        calls = []
+
+        async def fake(hass, cmd):
+            calls.append(dict(cmd))
+            return {"ok": True, "detail": "installed 0.18.1; restarting", "restarting": True}
+        monkeypatch.setitem(home_cmds.HANDLERS, "agent_update", fake)
+        return calls
+
+    def test_it_is_in_the_tier_and_still_sensitive(self):
+        assert "agent_update" in service_policy.GUARDED_ACTIONS
+        assert "agent_update" in service_policy.GUARDED_WITHOUT_CONSENT
+        assert service_policy.is_sensitive({"action": "agent_update"})
+        assert "agent_update" in service_policy.guarded_status({})["actions"]
+
+    def test_runs_without_consent_and_says_so_in_the_logbook(self, tmp_path, monkeypatch, ran):
+        home = Home(tmp_path, monkeypatch)
+        result, _ = home.send(agent_cmd())
+        assert result["ok"] and len(ran) == 1
+        assert any("as an approved update" in line for line in home.logbook)
+
+    def test_the_opt_out_refuses_it_as_consent(self, tmp_path, monkeypatch, ran):
+        home = Home(tmp_path, monkeypatch, options={"guarded_updates": False})
+        result, _ = home.send(agent_cmd())
+        assert result["refused"] and result["code"] == "consent" and not ran
+        assert "Allow Dartec to install approved updates" in result["detail"]
+
+    @pytest.mark.parametrize("extra", [{"allow_downgrade": True}, {"force": True},
+                                       {"repo": "someone/else"}, {"restart": "yes"}])
+    def test_nothing_else_rides_along_without_consent(self, tmp_path, monkeypatch, ran, extra):
+        home = Home(tmp_path, monkeypatch)
+        result, _ = home.send(agent_cmd(**extra))
+        assert result["refused"] and result["code"] == "invalid" and not ran
+
+    def test_with_consent_it_runs_as_before_downgrade_included(self, tmp_path, monkeypatch, ran):
+        """The exception only adds a way in; a homeowner who switched support
+        on can still let Dartec downgrade, as before."""
+        home = Home(tmp_path, monkeypatch, options={"unattended_support": True})
+        result, _ = home.send(agent_cmd(allow_downgrade=True))
+        assert result["ok"] and ran[0]["allow_downgrade"] is True
+        assert not any("as an approved update" in line for line in home.logbook)
+
+    def test_consent_with_the_opt_out_off_still_runs(self, tmp_path, monkeypatch, ran):
+        home = Home(tmp_path, monkeypatch, options={"unattended_support": True,
+                                                    "guarded_updates": False})
+        result, _ = home.send(agent_cmd())
+        assert result["ok"] and len(ran) == 1
+
+    def test_other_sensitive_actions_are_not_widened(self, tmp_path, monkeypatch):
+        home = Home(tmp_path, monkeypatch)
+        for action in ("ha_restart", "hacs_install"):
+            result, _ = home.send({"type": "command", "id": "x", "action": action})
+            assert result["refused"] and result["code"] == "consent"
