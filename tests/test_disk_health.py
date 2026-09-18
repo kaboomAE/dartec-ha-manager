@@ -6,8 +6,11 @@ a drive the host has never read must not look like a drive with no errors.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
                        / "dartec_ha_manager"))
@@ -218,6 +221,25 @@ class TestContainerInstalls:
         assert storage["model"] == "WD Blue SN570 1TB"
         assert storage["size_bytes"] == 976773168 * 512
         assert storage["type"] == "nvme"
+
+    @pytest.mark.skipif(not hasattr(os, "makedev"), reason="device numbers are POSIX")
+    def test_a_virtual_filesystem_is_no_disk(self, tmp_path, monkeypatch):
+        """The live CI job: /config on a container's overlay has device 0:49,
+        which is not a block device and must not be reported as one."""
+        class Stat:
+            st_dev = os.makedev(0, 49)
+
+        monkeypatch.setattr(disk_health.os, "stat", lambda _p: Stat())
+        assert disk_health.config_device("/config", str(tmp_path)) is None
+        assert sysfs_storage(None, str(tmp_path)) is None
+
+    @pytest.mark.skipif(not hasattr(os, "makedev"), reason="device numbers are POSIX")
+    def test_a_block_device_without_a_sysfs_entry_is_no_disk(self, tmp_path, monkeypatch):
+        class Stat:
+            st_dev = os.makedev(259, 3)
+
+        monkeypatch.setattr(disk_health.os, "stat", lambda _p: Stat())
+        assert disk_health.config_device("/config", str(tmp_path)) is None
 
     def test_the_default_routes_interface_gives_the_mac(self, tmp_path):
         write(tmp_path, "/proc/net/route",

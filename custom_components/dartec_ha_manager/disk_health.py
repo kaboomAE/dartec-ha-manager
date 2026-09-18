@@ -197,7 +197,14 @@ def config_device(path: str = "/config", root: str = "") -> str | None:
         st_dev = os.stat(path).st_dev
     except OSError:
         return None
+    # Major 0 is a virtual filesystem (overlay, tmpfs, a container's bind of
+    # one): there is no disk behind it, and no entry in /sys/dev/block. The
+    # live CI job caught this reporting "0:49" as a disk's name.
+    if os.major(st_dev) == 0:
+        return None
     link = f"{root}/sys/dev/block/{os.major(st_dev)}:{os.minor(st_dev)}"
+    if not os.path.exists(link):
+        return None
     try:
         return base_device(os.path.basename(os.path.realpath(link)))
     except OSError:
