@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.19.0 (released 2026-09-18); 0.20.0 on main, unreleased
+**Current version**: 0.20.0 (released 2026-09-18)
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -379,7 +379,7 @@ check.
 | 0.19.0 | The snapshot says which machine this is and how its disk is holding up. `hardware` gains `ha_uuid`, `machine`, `supervisor_arch`, `mac`, `chassis` and `storage` (model, vendor, serial, size, type, bus, device), read every 6 h; `disk_health` (wear, spare, media errors, bad sectors, power-on hours, temperature and the drive's own limits, with the sources they came from, or `unavailable` saying why) every 15 min; `host.disk_temp_c` and `host.soc_temp_c` every cycle. Nothing new is asked of the home: see `disk_health.py` |
 | 0.19.0 | **Guarded agent updates** (owner decision 2026-09-18): `agent_update` joins `GUARDED_ACTIONS` and `GUARDED_WITHOUT_CONSENT`. With consent it runs as before; without it, only as `{restart, job_id, rollout_id}` (no `allow_downgrade`), never when `guarded_updates` is off, and always with a logbook line. The opt-out switch is renamed "Allow Dartec to install approved updates" (same entity id), and a consent refusal carries `code: "consent"`. Homes on older agents still need consent for the update that brings this |
 | 0.19.0 | **Every entity** (owner decision on dartec-ha-manager-server#16): the snapshot carries `unregistered_entities` (what Home Assistant runs outside its entity registry — no `unique_id` — shaped like registry rows and marked `registered: false`, capped at 500, `unregistered_count` the true total) and `entity_inventory_digest` (16 hex over every entity's registry facts, never state), so the manager keeps a full per-home inventory past the 2,500-row cap and refetches it only when the digest moves; `registry_query` takes `include_unregistered`, which adds those entities, allows 1,000-row pages and returns `inventory_digest`; battery sensors outside the registry are reported as their own rows keyed `entity:<entity_id>` |
-| 0.20.0 | **"My Home"**, the homeowner's household panel (`household.py`, `household_ws.py`, `www/household/`): add a person (Family (can manage the home) = admin, Family = user, Guest = user who can only sign in at home), edit, pause/resume, remove, owner-only password reset, and the first dashboard each person sees (`core.default_panel` in their frontend user data; **a convenience, not a security boundary**). English and Arabic (Arabic unreviewed). Inside the home only: admin-only panel and commands, no remote command, the snapshot gains `household` with counts by role and nothing else. Guide: `docs/my-home/`. Unreleased |
+| 0.20.0 | **"My Home"**, the homeowner's household panel (`household.py`, `household_ws.py`, `www/household/`): add a person (Family (can manage the home) = admin, Family = user, Guest = user who can only sign in at home), edit, pause/resume, remove, owner-only password reset, and the first dashboard each person sees (`core.default_panel` in their frontend user data; **a convenience, not a security boundary**). English and Arabic (Arabic unreviewed). Inside the home only: admin-only panel and commands, no remote command, the snapshot gains `household` with counts by role and nothing else. Guide: `docs/my-home/`. Released 2026-09-18 |
 
 ---
 
