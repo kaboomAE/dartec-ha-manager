@@ -21,6 +21,18 @@
 // Defensive throughout, like branding.js: if the dashboard is not installed,
 // or its internals move, this does nothing at all rather than risk the
 // customer's UI.
+//
+// A second correction, just as narrow: Dwains' "Add card" picker
+// (dartec-ha-manager#25, reported upstream as dwains-dashboard-next#18).
+// Dwains mounts its pop-ups on document.body. From Home Assistant 2026.7,
+// HA's own card controls take their formatters and config from context that
+// <home-assistant> provides, so a card previewed in that pop-up throws
+// "this._formatters is undefined" and draws blank. The picker is moved to
+// where Home Assistant mounts its own dialogs, inside <home-assistant>'s
+// shadow root, before Dwains opens it, and removed when it closes, because
+// Dwains' own clean-up only looks in document.body. Only that one dialog:
+// it is the one that renders Home Assistant cards. Once Dwains fixes this
+// upstream the picker is no longer on document.body and this does nothing.
 (() => {
   const HOST = "dwains-dashboard-next-layout-card";
   const CSS = `
@@ -77,12 +89,39 @@
     requestAnimationFrame(() => { queued = false; sweep(document.body); });
   };
 
+  // Dwains' card picker, moved inside <home-assistant> (see the top). This
+  // has to happen here, in the observer's own callback: Dwains appends the
+  // dialog and opens it on the next animation frame, and a mutation callback
+  // runs before that frame, so the dialog is opened where it will stay.
+  const PICKER = "dwains-dashboard-next-card-editor-dialog";
+  const rehome = (node) => {
+    try {
+      if (node.localName !== PICKER || node.parentNode !== document.body) return;
+      const ha = document.querySelector("home-assistant");
+      const root = ha && ha.shadowRoot;
+      if (!root) return;
+      // One that closed without saying so (a navigation mid-edit) would
+      // otherwise stay, since Dwains cannot see it here to remove it.
+      root.querySelectorAll(PICKER).forEach((old) => old.remove());
+      root.appendChild(node);
+      node.addEventListener("dialog-closed", () => {
+        if (node.parentNode === root) node.remove();
+      }, { once: true });
+    } catch (err) {
+      /* left where Dwains put it: the upstream behaviour, nothing worse */
+    }
+  };
+
   sweep(document.body);
   try {
     new MutationObserver((records) => {
+      let added = false;
       for (const record of records) {
-        if (record.addedNodes && record.addedNodes.length) { run(); return; }
+        if (!record.addedNodes || !record.addedNodes.length) continue;
+        added = true;
+        if (record.target === document.body) record.addedNodes.forEach(rehome);
       }
+      if (added) run();
     }).observe(document.body, { childList: true, subtree: true });
   } catch (err) {
     // Without an observer, catch the common case of a later mount.
