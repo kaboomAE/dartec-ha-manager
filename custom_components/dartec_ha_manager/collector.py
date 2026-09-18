@@ -15,9 +15,9 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import device_health, hacs_token, hardware, signal_health
+from . import device_health, hacs_token, machine, signal_health
 from .const import DOMAIN
-from .hardware import async_collect_hardware
+from .machine import async_collect_hardware
 from .registry_access import all_devices
 from .registry_paging import inventory_digest
 from .version import async_agent_version
@@ -95,11 +95,11 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # cached (see disk_health.py); the manager uses it to know which model
     # every home runs and to notice a machine changing under a home.
     try:
-        identity = await hardware.async_collect_identity(hass)
+        identity = await machine.async_collect_identity(hass)
         snapshot["hardware"].update({k: v for k, v in identity.items() if v is not None})
-        snapshot["disk_health"] = await hardware.async_collect_disk_health(hass, identity)
+        snapshot["disk_health"] = await machine.async_collect_disk_health(hass, identity)
         snapshot["host"].update({k: v for k, v in (
-            await hardware.async_collect_temperatures(hass, identity)).items() if v is not None})
+            await machine.async_collect_temperatures(hass, identity)).items() if v is not None})
     except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
         _LOGGER.debug("hardware identity/health collect failed: %s", err)
     if supervisor:
