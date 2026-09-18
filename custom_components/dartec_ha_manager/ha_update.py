@@ -37,7 +37,7 @@ run without a maintenance window is in service_policy.py, GUARDED_ACTIONS):
   at the start is restored.
 
 What can and cannot be undone is written out in the manager repository, in
-docs/17-guarded-updates.md. In short: Core can be put back, and its
+docs/18-guarded-updates.md. In short: Core can be put back, and its
 configuration restored from the backup, but anything the house recorded
 between the backup and the restore is lost with it. The OS can be put back on
 HAOS. A Supervised install's OS is not Home Assistant's to update at all, and

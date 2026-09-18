@@ -19,7 +19,7 @@ Then the homeowner's logbook must show each step with its versions, and the
 log must hold no errors against the agent.
 
 What this cannot prove is the real Supervisor installing a real image, and a
-real boot slot switch: those are the bench Pi's job (docs/17-guarded-updates.md
+real boot slot switch: those are the bench Pi's job (docs/18-guarded-updates.md
 in the manager repository has the runbook).
 
     python tests/live/run_live_update.py                 # 2026.9.2
