@@ -18,7 +18,11 @@ For each Home Assistant version given, this:
    does, and checks the entry is still loaded, running with the new token,
    and that nothing in Home Assistant failed along the way
    (dartec-ha-manager#8);
-7. checks the log: nothing reported against `dartec_ha_manager`, in
+7. takes demo devices down, labels one as expected-offline and drains a
+   battery through Home Assistant's own APIs (`device_health_setup.py`), and
+   checks the agent's `offline_devices` and `batteries` sections report
+   exactly what Home Assistant was told — no more, no less;
+8. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
@@ -164,6 +168,7 @@ def start_container(name: str, version: str, config: Path) -> int:
     docker("cp", f"{config}{'/'}.", f"{name}:/config")
     docker("cp", str(HERE / "stub_manager.py"), f"{name}:/stub_manager.py")
     docker("cp", str(HERE / "ha_registry.py"), f"{name}:/ha_registry.py")
+    docker("cp", str(HERE / "device_health_setup.py"), f"{name}:/device_health_setup.py")
     docker("start", name)
     mapping = docker("port", name, "8123/tcp").strip().splitlines()[0]
     return int(mapping.rsplit(":", 1)[1])
@@ -252,6 +257,63 @@ def check_hacs_swap(name: str, base: str, token: str, result: dict, timeout: flo
         problems.append("Home Assistant failed while the token was swapped:\n  "
                         + "\n  ".join(broken[:10]))
     return problems
+
+
+def latest_snapshot(name: str) -> tuple[int, dict | None]:
+    files = docker("exec", name, "ls", STATE_DIR).split()
+    latest = max((int(f[9:-5]) for f in files if re.fullmatch(r"snapshot-\d+\.json", f)),
+                 default=0)
+    return latest, (read_state(name, f"snapshot-{latest}.json") if latest else None)
+
+
+def check_device_health(name: str, token: str, timeout: float) -> tuple[list[str], dict]:
+    """Stage the outage and the flat battery, then read them back from a snapshot
+    taken afterwards. A snapshot from before the staging would pass the
+    negative checks vacuously, so the wait is for one numbered after it."""
+    truth = json.loads(docker("exec", name, "python3", "/device_health_setup.py", token))
+    staged_at, _ = latest_snapshot(name)
+    offline_id = truth["offline"][0]
+
+    def reported():
+        number, snap = latest_snapshot(name)
+        if number <= staged_at or not snap:
+            return None
+        ids = {row.get("device_id") for row in snap.get("offline_devices") or []}
+        return snap if offline_id in ids else None
+
+    problems: list[str] = []
+    try:
+        snap = wait_for("a snapshot reporting the staged outage", reported, timeout)
+    except Failure as err:
+        return [str(err)], {}
+    offline = {row["device_id"]: row for row in snap.get("offline_devices") or []}
+    if set(offline) != set(truth["offline"]):
+        problems.append(f"offline_devices are {sorted(offline)}, expected exactly "
+                        f"{truth['offline']} (not the labelled or half-down device, not "
+                        "Push's never-pressed button, not the Backup service)")
+    if snap.get("offline_count") != len(truth["offline"]):
+        problems.append(f"offline_count {snap.get('offline_count')} != {len(truth['offline'])}")
+    row = offline.get(offline_id) or {}
+    if not row.get("since") or row.get("integration") != "demo":
+        problems.append(f"the offline row is incomplete: {row}")
+    for device_id in truth["not_offline"]:
+        if device_id in offline:
+            problems.append(f"{device_id} was reported offline and should not have been")
+
+    batteries = snap.get("batteries") or []
+    reported_levels = {r["device_id"]: r.get("level") for r in batteries}
+    if reported_levels != truth["batteries"]:
+        problems.append(f"batteries {reported_levels} != Home Assistant's {truth['batteries']}")
+    levels = [r.get("level") for r in batteries]
+    if levels != sorted(levels):
+        problems.append(f"batteries are not lowest first: {levels}")
+    if snap.get("battery_count") != len(truth["batteries"]):
+        problems.append(f"battery_count {snap.get('battery_count')} != "
+                        f"{len(truth['batteries'])} (the demo's battery_charging sensor "
+                        "must not count)")
+    if snap.get("device_health_error"):
+        problems.append(f"the device health collector failed: {snap['device_health_error']}")
+    return problems, {"offline": list(offline.values()), "batteries": batteries}
 
 
 def read_state(name: str, filename: str):
@@ -413,6 +475,11 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         problems += check_hacs_swap(name, base, token, swap, timeout)
         log(f"{version}: HACS token swap answered {swap.get('reason') or 'ok'}")
 
+        health_problems, health = check_device_health(name, token, timeout)
+        problems += health_problems
+        log(f"{version}: device health: {len(health.get('offline', []))} offline, "
+            f"batteries {[b.get('level') for b in health.get('batteries', [])]}")
+
         text = ha_log(name)
         # The deprecation boundary is judged on what is running, so `stable`
         # and `beta` work as well as a pinned tag.
@@ -431,6 +498,8 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
             (out / "registry_query.json").write_text(json.dumps(query, indent=1),
                                                      encoding="utf-8")
             (out / "ha_registry.json").write_text(json.dumps(truth, indent=1), encoding="utf-8")
+            (out / "device_health.json").write_text(json.dumps(health, indent=1),
+                                                    encoding="utf-8")
     except Failure as err:
         problems.append(str(err))
     except (urllib.error.URLError, OSError, KeyError, ValueError) as err:

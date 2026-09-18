@@ -15,7 +15,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import hacs_token, signal_health
+from . import device_health, hacs_token, signal_health
 from .const import DOMAIN
 from .hardware import async_collect_hardware
 from .registry_access import all_devices
@@ -41,6 +41,10 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # without any mesh topology at all.
     snapshot["signal"] = signal_health.collect_signal(hass)
     snapshot["signal_disabled"] = signal_health.disabled_signal_entities(hass)
+    # Battery levels and devices that stopped answering, summarised here so
+    # the manager is sent two short lists rather than every entity's state.
+    # Thresholds and "for how long" are decided on the manager.
+    snapshot.update(device_health.collect(hass))
     # Which phones this home can actually push to. Cheap (a dict lookup, no
     # I/O) and it is the difference between a Live Activity appearing on a
     # lock screen and nothing happening at all: the notify action name is
