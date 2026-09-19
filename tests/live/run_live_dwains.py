@@ -40,8 +40,10 @@ What it asserts:
 * **With the fix, the pop-up is clean.** No formatter error, the pop-up sits
   inside `<home-assistant>`, closing it leaves nothing behind, it opens
   again, and picking the thermostat opens Dwains' editor with a clean live
-  preview. And the fix adds no error of its own: every other error with the
-  fix loaded also appears without it.
+  preview. In that editor, an entity chosen survives a Home Assistant update
+  and a change to another option (dwains-dashboard-next#19: without the fix
+  Dwains' editor forgets it). And the fix adds no error of its own: every
+  other error with the fix loaded also appears without it.
 * **The cause is where Dwains mounts its pop-up.** The card host errors under
   `document.body` and renders cleanly inside `<home-assistant>`, in both
   browsers, with the fix blocked, exactly when the unfixed pop-up errors. If
@@ -333,6 +335,36 @@ PICK_THERMOSTAT = """async () => {
 }""" % FIND_PICKERS
 
 
+# In the editor Dwains opened, choose an entity the way HA's entity picker
+# announces it, let a Home Assistant update redraw the editor, then change an
+# option the way ha-form announces it. Dwains never hands the editor its
+# config back (dwains-dashboard-next#19), so without the fix the redraw blanks
+# the field and the option change wipes the entity.
+EDITOR_STEP = """async ([step, entity]) => {
+  %s
+  const deep = (root, name) => { const q = [root]; while (q.length) { const n = q.shift(); if (!n) continue;
+    for (const el of n.querySelectorAll("*")) { if (el.localName === name) return el;
+      if (el.shadowRoot) q.push(el.shadowRoot); } } return null; };
+  const d = pickers()[0];
+  const ed = d && d._configEl;
+  if (!ed) return {error: "no editor"};
+  const root = ed.shadowRoot || ed;
+  if (step === "entity") {
+    const picker = deep(root, "ha-entity-picker");
+    if (!picker) return {error: "no entity picker"};
+    picker.dispatchEvent(new CustomEvent("value-changed", {detail: {value: entity}, bubbles: true, composed: true}));
+  }
+  if (step === "option") {
+    const form = deep(root, "ha-form");
+    if (!form) return {error: "no form"};
+    form.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {...(ed._config || {}), name: "Dartec test"}}, bubbles: true, composed: true}));
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const picker = deep(root, "ha-entity-picker");
+  return {card: d._card && d._card.entity, shown: picker ? picker.value : null};
+}""" % FIND_PICKERS
+
+
 def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None) -> dict:
     context = new_context(browser, stored, combo.scheme, combo.fix)
     page = context.new_page()
@@ -365,6 +397,18 @@ def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None
         picked = page.evaluate(PICK_THERMOSTAT)
         page.wait_for_timeout(2500)
         editor_errors = [e[:200] for e in errors[before_pick:] if CONTEXT_MISSING.search(e)]
+        editor = {}
+        if picked == "editor":
+            climate = page.evaluate("() => Object.keys(document.querySelector('home-assistant').hass.states)"
+                                    ".find((e) => e.startsWith('climate.'))")
+            editor["chosen"] = page.evaluate(EDITOR_STEP, ["entity", climate])
+            # A Home Assistant update, as a busy home sends every few seconds.
+            http("POST", f"{base}/api/states/sensor.dartec_live_tick", token=stored["access_token"],
+                 json_body={"state": str(time.time())})
+            page.wait_for_timeout(2500)
+            editor["after_update"] = page.evaluate(EDITOR_STEP, ["look", climate])
+            editor["after_option"] = page.evaluate(EDITOR_STEP, ["option", climate])
+            editor["expected"] = climate
         return {"combo": combo.key, "engine": combo.engine, "fix_loaded": combo.fix,
                 "scheme": combo.scheme, "card_mod": combo.card_mod, "theme": combo.theme,
                 "formatter_errors": len(formatter),
@@ -375,6 +419,7 @@ def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None
                 "picker": opened, "left_after_close": left_after_close,
                 "pickers_after_reopen": reopened,
                 "picked": picked, "editor_errors": editor_errors,
+                "editor": editor,
                 "already_open": [w for w in warnings if "already open" in w],
                 # Real module: several KB. Blocked: the stub's few bytes.
                 "fix_bytes": fix_served[0] if fix_served else None}
@@ -564,6 +609,10 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
             if not (r["dialog"] or {}).get("inside_home_assistant"):
                 problems.append(f"{r['combo']}: the pop-up was not moved inside "
                                 f"<home-assistant>: {r['dialog']}")
+            ed = r.get("editor") or {}
+            want = ed.get("expected")
+            if not want or (ed.get("after_update") or {}).get("shown") != want                     or (ed.get("after_option") or {}).get("card") != want:
+                problems.append(f"{r['combo']}: the card editor did not keep its entity: {ed}")
             if r["picked"] != "editor" or r["editor_errors"]:
                 problems.append(f"{r['combo']}: picking the thermostat gave {r['picked']} "
                                 f"with {r['editor_errors']}")
@@ -583,6 +632,13 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         else:
             log(f"{version}: clean without the fix too; if that holds on a Dwains "
                 "release, the workaround in dashboard-fix.js can go")
+        forgets = [r["combo"] for r in rows if not r["fix_loaded"]
+                   and ((r.get("editor") or {}).get("after_option") or {}).get("card")
+                   != (r.get("editor") or {}).get("expected")]
+        log(f"{version}: without the fix the card editor forgets its entity in "
+            f"{len(forgets)} of {len(rows) // 2} (dwains-dashboard-next#19)")
+        if expect_clean and forgets:
+            problems.append(f"the card editor still forgets its entity without the fix: {forgets}")
         if expect_clean and upstream:
             problems.append(f"the upstream error still happens without the fix: {upstream}")
 

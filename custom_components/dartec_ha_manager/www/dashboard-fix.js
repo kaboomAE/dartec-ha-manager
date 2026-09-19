@@ -33,6 +33,9 @@
 // Dwains' own clean-up only looks in document.body. Only that one dialog:
 // it is the one that renders Home Assistant cards. Once Dwains fixes this
 // upstream the picker is no longer on document.body and this does nothing.
+//
+// A third, in the same dialog: its card editor forgets what was chosen in it
+// after a few seconds (dwains-dashboard-next#19). See the listener below.
 (() => {
   const HOST = "dwains-dashboard-next-layout-card";
   const CSS = `
@@ -111,6 +114,38 @@
       /* left where Dwains put it: the upstream behaviour, nothing worse */
     }
   };
+
+  // Keep Dwains' card editor in step with what was chosen in it
+  // (reported upstream as dwains-dashboard-next#19). Home Assistant's card
+  // editors do not keep their own changes: they announce them with
+  // config-changed and expect the host to hand the result back with
+  // setConfig. Dwains merges the change into its card but never hands it
+  // back, so every Home Assistant update redraws the editor from the first,
+  // empty config, and the next change sends that empty entity and wipes the
+  // one chosen. Reproduced with the agent removed entirely, so it is not
+  // caused by anything here. After Dwains has merged (its own listener runs
+  // at the editor; this one is a capture listener, so it defers a
+  // microtask), Dwains' own card is given back to Dwains' own editor. Nothing
+  // happens outside that dialog, or if its internals are not as expected.
+  // Once Dwains does this itself, it is a harmless repeat.
+  try {
+    window.addEventListener("config-changed", (ev) => {
+      const dialog = ev.composedPath().find((n) => n && n.localName === PICKER);
+      if (!dialog) return;
+      queueMicrotask(() => {
+        try {
+          const editor = dialog._configEl, card = dialog._card;
+          if (editor && card && card.type && typeof editor.setConfig === "function") {
+            editor.setConfig(card);
+          }
+        } catch (err) {
+          /* left as Dwains has it: the upstream behaviour, nothing worse */
+        }
+      });
+    }, true);
+  } catch (err) {
+    /* no listener, no correction */
+  }
 
   sweep(document.body);
   try {
