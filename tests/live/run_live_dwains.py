@@ -49,6 +49,8 @@ What it asserts:
   browsers, with the fix blocked, exactly when the unfixed pop-up errors. If
   that stops being true the diagnosis in #25 is out of date, and the test says
   so.
+* **A saved Home custom card is on the Home page after a reload.** Dwains
+  stores it but drops it before drawing (dwains-dashboard-next#20).
 * **The notification fix still works.** In dark mode with the Dartec theme, a
   notification row in Dwains' own notification panel reaches 4.5:1 between
   its text and its background.
@@ -292,8 +294,10 @@ def setup_home(page) -> None:
     ws({"type": "lovelace/dashboards/create", "url_path": DASHBOARD,
         "title": "Dartec Dashboard", "icon": "mdi:view-dashboard-variant",
         "mode": "storage", "show_in_sidebar": True, "require_admin": False})
+    # One Home custom card, stored the way Dwains' own settings page saves it.
     ws({"type": "lovelace/config/save", "url_path": DASHBOARD,
-        "config": {"strategy": {"type": "custom:dwains-dashboard-next"}}})
+        "config": {"strategy": {"type": "custom:dwains-dashboard-next",
+                                "home_custom_cards": [HOME_CARD]}}})
     ws({"type": "call_service", "domain": "persistent_notification", "service": "create",
         "service_data": {"title": "Front door", "message": "The front door was left open.",
                          "notification_id": "dartec_live_door"}})
@@ -377,7 +381,7 @@ def run_combo(browser, base: str, stored: dict, combo: Combo, shots: Path | None
     page.on("response", lambda r: fix_served.append(len(r.body())) if
             "dashboard-fix.js" in r.url else None)
     try:
-        page.goto(f"{base}/{DASHBOARD}", wait_until="load")
+        page.goto(f"{base}/{DASHBOARD}", wait_until="load", timeout=60000)
         opened = page.evaluate(OPEN_PICKER)
         if opened.startswith("no element"):
             raise Failure(f"{combo.key}: could not open the add-card pop-up ({opened})")
@@ -433,7 +437,7 @@ def check_notification_fix(browser, base: str, stored: dict, shots: Path | None)
     for fix in (True, False):
         context = new_context(browser, stored, "dark", fix)
         page = context.new_page()
-        page.goto(f"{base}/{DASHBOARD}", wait_until="load")
+        page.goto(f"{base}/{DASHBOARD}", wait_until="load", timeout=60000)
         opened = page.evaluate(OPEN_NOTIFICATIONS)
         page.wait_for_timeout(1500)
         measured = page.evaluate(NOTIFICATION_CONTRAST)
@@ -461,6 +465,37 @@ MOUNT = """async (where) => {
 }"""
 
 
+HOME_CARD = {"id": "home-card-dartec-live",
+             "card": {"type": "markdown", "content": "## Dartec live test"}}
+
+# The Home page after a fresh load: does the stored Home custom card reach
+# the layout card and get drawn? Dwains drops the key between its strategy
+# and its layout card (dwains-dashboard-next#20).
+HOME_CARDS_SHOWN = """async () => {
+  %s
+  const lay = await until(() => walk((el) => el.localName === "dwains-dashboard-next-layout-card"));
+  if (!lay) return null;
+  await new Promise((r) => setTimeout(r, 1500));
+  return {config: ((lay.config || {}).home_custom_cards || []).length,
+          drawn: lay.shadowRoot ? lay.shadowRoot.querySelectorAll(
+            ".home-custom-cards-section dwains-dashboard-next-card-host").length : 0};
+}""" % WALK
+
+
+def check_home_cards(pw, base: str, stored: dict) -> dict:
+    out = {}
+    for engine in ENGINES:
+        browser = getattr(pw, engine).launch()
+        for fix in (True, False):
+            context = new_context(browser, stored, "light", fix)
+            page = context.new_page()
+            page.goto(f"{base}/{DASHBOARD}", wait_until="load", timeout=60000)
+            out[f"{engine}-{'fix' if fix else 'nofix'}"] = page.evaluate(HOME_CARDS_SHOWN)
+            context.close()
+        browser.close()
+    return out
+
+
 def check_cause(pw, base: str, stored: dict) -> dict:
     out = {}
     for engine in ENGINES:
@@ -470,7 +505,7 @@ def check_cause(pw, base: str, stored: dict) -> dict:
             page = context.new_page()
             errors: list[str] = []
             page.on("pageerror", lambda e, errors=errors: errors.append(e.message[:200]))
-            page.goto(f"{base}/{DASHBOARD}", wait_until="load")
+            page.goto(f"{base}/{DASHBOARD}", wait_until="load", timeout=60000)
             page.evaluate(OPEN_NOTIFICATIONS)   # returns once Dwains is up
             page.evaluate(MOUNT, where)
             out[f"{engine}-{where}"] = {
@@ -574,12 +609,22 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
             for each in browsers.values():
                 each.close()
             cause = check_cause(pw, base, stored)
+            home_cards = check_home_cards(pw, base, stored)
 
         rows.sort(key=lambda r: (r["engine"], not r["fix_loaded"], r["scheme"] != "light",
                                  not r["card_mod"], r["theme"] != "Dartec"))
         print(table(rows))
         log(f"{version}: notification row in dark mode: {notification}")
         log(f"{version}: the card host mounted by hand: {cause}")
+        log(f"{version}: the stored Home custom card after a reload: {home_cards}")
+        for engine in ENGINES:
+            shown = home_cards.get(f"{engine}-fix") or {}
+            if shown.get("config") != 1 or shown.get("drawn") != 1:
+                problems.append(f"{engine}: with the fix, the stored Home custom card is not on "
+                                f"the Home page after a reload: {shown}")
+        if expect_clean and any((home_cards.get(f"{e}-nofix") or {}).get("drawn") != 1
+                                for e in ENGINES):
+            problems.append(f"without the fix the Home custom card still vanishes: {home_cards}")
         for engine in ENGINES:
             outside, inside = cause[f"{engine}-body"], cause[f"{engine}-home-assistant"]
             popup = any(r["formatter_errors"] for r in rows if r["engine"] == engine)
@@ -659,7 +704,8 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
             (shots / "results.json").write_text(json.dumps(
                 {"versions": {"home_assistant": version,
                               **{f: ASSETS[f][1] for f in ASSETS}},
-                 "rows": rows, "notification": notification, "cause": cause},
+                 "rows": rows, "notification": notification, "cause": cause,
+                 "home_cards": home_cards},
                 indent=1), encoding="utf-8")
             (shots / "table.md").write_text(table(rows) + "\n", encoding="utf-8")
     except Failure as err:

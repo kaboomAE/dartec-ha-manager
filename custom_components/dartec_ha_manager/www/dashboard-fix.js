@@ -163,3 +163,58 @@
     [400, 1500, 4000].forEach((ms) => setTimeout(run, ms));
   }
 })();
+
+// A fourth: Home custom cards that are saved but gone after a reload
+// (dartec-ha-manager#25, reported upstream as dwains-dashboard-next#20).
+// Dwains stores them in its strategy config as `home_custom_cards`, but both
+// of its generators copy a fixed list of keys onward, the Home view's
+// strategy and then the layout card, and that key is not on either list. So
+// the card is saved, shows until the page reloads, and then is never drawn.
+// Reproduced on a clean install with only Dwains. The generators are wrapped
+// to carry that one key through, only where Dwains left it out, so this
+// does nothing once Dwains passes it itself. Its own IIFE, so it does not
+// depend on the stylesheet above, and it runs as the module loads, before
+// Home Assistant asks the strategy to build the dashboard.
+(() => {
+  const DASHBOARDS = ["ll-strategy-dashboard-dwains-dashboard-next", "ll-strategy-dashboard-dwains"];
+  const VIEWS = ["ll-strategy-view-dwains-dashboard-next-view", "ll-strategy-view-dwains-view"];
+  const LAYOUT = "custom:dwains-dashboard-next-layout-card";
+
+  const wrap = (tag, carry) => {
+    try {
+      customElements.whenDefined(tag).then(() => {
+        const cls = customElements.get(tag);
+        if (!cls || typeof cls.generate !== "function" || cls.__dartecHomeCards) return;
+        const original = cls.generate;
+        cls.generate = async function (config, hass) {
+          const out = await original.call(this, config, hass);
+          try {
+            const cards = config && config.home_custom_cards;
+            if (Array.isArray(cards) && out) carry(cards, out);
+          } catch (err) {
+            /* as Dwains built it: the upstream behaviour, nothing worse */
+          }
+          return out;
+        };
+        cls.__dartecHomeCards = true;
+      });
+    } catch (err) {
+      /* no custom elements registry: nothing to do */
+    }
+  };
+
+  DASHBOARDS.forEach((tag) => wrap(tag, (cards, out) => {
+    (out.views || []).forEach((view) => {
+      if (view && view.strategy && !("home_custom_cards" in view.strategy)) {
+        view.strategy.home_custom_cards = cards;
+      }
+    });
+  }));
+  VIEWS.forEach((tag) => wrap(tag, (cards, out) => {
+    (out.cards || []).forEach((card) => {
+      if (card && card.type === LAYOUT && !("home_custom_cards" in card)) {
+        card.home_custom_cards = cards;
+      }
+    });
+  }));
+})();
