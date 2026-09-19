@@ -79,6 +79,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
     from .media_cmds import HANDLERS as MEDIA_HANDLERS
     from .lovelace_cmds import HANDLERS as LOVELACE_HANDLERS
     from .link_cmds import HANDLERS as LINK_HANDLERS
+    from .panel_cmds import HANDLERS as PANEL_HANDLERS
     from .registry_cmds import HANDLERS as REGISTRY_HANDLERS
     from .tunnel_cmds import HANDLERS as TUNNEL_HANDLERS
     from .user_cmds import HANDLERS as USER_HANDLERS
@@ -179,6 +180,8 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             result = await REGISTRY_HANDLERS[action](hass, cmd)
         elif action in USER_HANDLERS:
             result = await USER_HANDLERS[action](hass, cmd)
+        elif action in PANEL_HANDLERS:
+            result = await PANEL_HANDLERS[action](hass, cmd)
         elif action in TUNNEL_HANDLERS:
             result = await TUNNEL_HANDLERS[action](hass, cmd)
         elif action in LINK_HANDLERS:
@@ -203,7 +206,14 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                    "standing": "under the standing 'unattended support' "
                                "setting on this integration"}.get(
                 granted.get("source"), "under consent from this home")
-            maintenance.logbook(hass, f"Dartec ran '{action}' {how}")
+            line = f"Dartec ran '{action}' {how}"
+            if action == "panel_setup":
+                # Which account, so the line means something to the household.
+                # The detail names the account and its dashboard, never the
+                # password (panel_cmds.py).
+                line += (f": {result.get('detail')}" if result.get("ok")
+                         else f"; not done: {result.get('detail')}")
+            maintenance.logbook(hass, line)
         elif action == "media_upload" and result.get("uploaded"):
             maintenance.logbook(hass, f"Dartec added media file "
                                       f"'{result.get('media_content_id')}'")
@@ -216,6 +226,11 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         elif action == "lovelace_update" and result.get("ok"):
             # Not consequential enough to need consent, but it is a name the
             # household reads every day changing under them.
+            maintenance.logbook(hass, f"Dartec {result.get('detail')}")
+        elif action in ("panel_update", "panel_remove") and result.get("ok") \
+                and not result.get("gone"):
+            # Routine (service_policy.py says why), but an account in their
+            # house changed or went, and that belongs in their own record.
             maintenance.logbook(hass, f"Dartec {result.get('detail')}")
         elif action == "hacs_token_set":
             # Routine, so no consent line above — but a credential in their

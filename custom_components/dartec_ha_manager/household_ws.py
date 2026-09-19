@@ -69,6 +69,9 @@ LOOPBACK_CLIENT_PREFIX = "Dartec task"
 # Home Assistant's built-in home page. Not the map, energy or settings pages.
 DASHBOARD_COMPONENTS = ("lovelace", "home")
 DARTEC_DASHBOARD_PREFIX = "dartec-"
+# One room's dashboard, made for that room's wall panel (panels.py). Hidden
+# from the sidebar already; left out here even if someone shows it there.
+ROOM_DASHBOARD_PREFIX = "dartec-room-"
 
 _DATA = "_household"
 _WS_REGISTERED = "_household_ws_registered"
@@ -222,6 +225,8 @@ def dashboards(hass: HomeAssistant) -> list[dict]:
         # start page" in the panel already stands for it.
         if not getattr(panel, "show_in_sidebar", True):
             continue
+        if url_path.startswith(ROOM_DASHBOARD_PREFIX):
+            continue
         out.append({"url_path": url_path,
                     "title": panel.sidebar_title,
                     "icon": panel.sidebar_icon,
@@ -343,6 +348,7 @@ async def _answer(hass: HomeAssistant, connection, msg: dict, data: HouseholdSto
         "people": people,
         "dashboards": dashboards(hass),
         "maintenance_account": any(rules.kind(u) == rules.KIND_MAINTENANCE for u in users),
+        "panel_accounts": rules.panel_count(users),
         "activity": list(reversed(data.activity[-ACTIVITY_SHOWN:])),
         "limits": {"min_password": rules.MIN_PASSWORD},
     })

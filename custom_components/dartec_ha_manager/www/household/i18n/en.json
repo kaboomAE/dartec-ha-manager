@@ -15,6 +15,7 @@
   "first_dashboard": "Sees first: {name}",
   "owner_note": "The owner's account can't be changed here.",
   "maintenance_note": "Dartec's support account is also on this home, so we can look after it. It isn't a member of your household and can't be changed here. You decide when Dartec may make changes with the \"Allow Dartec support\" switch.",
+  "panel_note": "Room panels set up by your installer: {count}. These wall screens each show one room. They aren't members of your household and can't be changed here.",
   "roles": {
     "owner": "Owner",
     "admin": "Family (can manage the home)",
@@ -142,6 +143,8 @@
     "name_too_long": "That name is too long.",
     "username_invalid": "Usernames are 2 to 32 letters, numbers, dots, dashes or underscores, starting with a letter or number.",
     "username_reserved": "That username is reserved for Dartec.",
+    "username_panel": "Usernames starting with \"panel-\" are kept for room panels.",
+    "panel": "Room panels are set up by your installer and aren't managed here.",
     "username_taken": "Someone on this home already has that username.",
     "password_short": "The password needs at least 8 characters.",
     "password_long": "That password is too long.",

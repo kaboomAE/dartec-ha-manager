@@ -241,3 +241,25 @@ class TestTheHomesOwnControls:
         assert refusal and key in refusal
         nested = {"entity_id": "light.kitchen", "target": {key: "x"}}
         assert check_call_service(call("light", "turn_on", **nested), maintenance_open=True)
+
+
+class TestRoomPanels:
+    """Room panel accounts (panels.py, panel_cmds.py)."""
+
+    def test_setting_one_up_needs_consent(self):
+        """It creates a login that works on the home network for as long as it
+        exists: standing access, like `user_create`."""
+        assert "panel_setup" in SENSITIVE_ACTIONS
+        assert is_sensitive({"action": "panel_setup", "username": "panel-kitchen"})
+
+    @pytest.mark.parametrize("action", ["panel_update", "panel_remove", "panel_status"])
+    def test_the_rest_are_routine(self, action):
+        """They touch only panel accounts and grant nothing: an update changes
+        a panel's name and dashboard, a removal only takes access away, and a
+        status is read only."""
+        assert action not in SENSITIVE_ACTIONS
+        assert not is_sensitive({"action": action, "user_id": "abc"})
+
+    def test_no_field_moves_setup_out_from_behind_the_gate(self):
+        assert is_sensitive({"action": "panel_setup", "force": True,
+                             "allow_override": False, "routine": True})

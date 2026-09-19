@@ -339,6 +339,7 @@ class DartecHouseholdPanel extends HTMLElement {
       ${canManage ? `<button class="btn primary add" data-act="add">${ICON_ADD}<span>${esc(this.t("add"))}</span></button>` : `<p class="error">${esc(this.t("errors.actor_maintenance"))}</p>`}
       <div class="people">${people}</div>
       ${d.maintenance_account ? `<p class="note">${esc(this.t("maintenance_note"))}</p>` : ""}
+      ${d.panel_accounts ? `<p class="note">${esc(this.t("panel_note", { count: d.panel_accounts }))}</p>` : ""}
       <section><h2>${esc(this.t("activity.title"))}</h2><ul class="activity">${activity}</ul></section>
       <details class="about"><summary>${esc(this.t("about.title"))}</summary>
         <p>${esc(this.t("about.roles"))}</p><p>${esc(this.t("guest_honest"))}</p>

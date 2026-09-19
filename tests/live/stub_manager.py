@@ -21,9 +21,15 @@ own. Instead the driver drops commands into STATE_DIR as `send-<id>.json`, and
 each is sent once, on the next snapshot. The latest snapshot is also kept as
 `snapshot-latest.json`, because a guarded update is followed through the
 snapshots, not through its command's reply.
+
+DARTEC_LIVE_SCENARIO=drive (run_live_panels.py) is the same outbox, watched
+continuously rather than on each snapshot: its driver sends a few dozen
+commands one after another, and waiting for a snapshot before each would
+turn a minute's test into half an hour.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -86,6 +92,14 @@ async def agent_ws(request):
 
     snapshots = 0
     asked = False
+    watcher = None
+    if SCENARIO == "drive":
+        async def watch() -> None:
+            while not ws.closed:
+                await send_outbox(ws)
+                await asyncio.sleep(0.2)
+
+        watcher = asyncio.create_task(watch())
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
             break
@@ -97,6 +111,8 @@ async def agent_ws(request):
             if SCENARIO == "update":
                 await send_outbox(ws)
                 continue
+            if SCENARIO == "drive":
+                continue
             if not asked:
                 asked = True
                 await ws.send_json({"type": "command", "id": "devices",
@@ -104,7 +120,7 @@ async def agent_ws(request):
                                     "limit": 10000})
         elif data.get("type") == "command_result":
             _write(f"result-{data.get('id')}.json", data)
-            if SCENARIO == "update":
+            if SCENARIO in ("update", "drive"):
                 continue
             if data.get("id") == "devices":
                 await ws.send_json({"type": "command", "id": "hacs-swap",
@@ -117,6 +133,8 @@ async def agent_ws(request):
                                     "action": "registry_query", "kind": "entities",
                                     "include_unregistered": True, "offset": 0,
                                     "limit": 1000})
+    if watcher is not None:
+        watcher.cancel()
     return ws
 
 

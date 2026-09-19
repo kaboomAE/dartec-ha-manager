@@ -20,7 +20,7 @@ This module holds everything that decides *whether* a change may happen, as
 plain functions over plain dicts, so the guards are unit-tested without Home
 Assistant (tests/test_household.py). `household_ws.py` applies them.
 
-An account is one of four kinds, and only a **person** can be changed here:
+An account is one of five kinds, and only a **person** can be changed here:
 
 * **owner** - shown, labelled, never changed from the panel. Home Assistant
   itself refuses to deactivate an owner; the owner's own password is changed
@@ -29,6 +29,12 @@ An account is one of four kinds, and only a **person** can be changed here:
   created by the onboarding app). Not listed as a member of the household,
   never changed here. The panel says it exists, so nobody is surprised to
   find it in Home Assistant's own settings.
+* **panel** - a room panel's account (`panel-kitchen`): a wall tablet
+  showing one room, set up by the installer through the manager (see
+  `panels.py`). Not a member of the household, never changed here, not
+  counted; the panel says how many there are, as it does for Dartec's
+  account. The `panel-` prefix is reserved, so a new person cannot be given
+  it and then be mistaken for one.
 * **system** - Home Assistant's plumbing: the Supervisor, add-ons, Home
   Assistant Cloud. Never shown, never changed.
 * **person** - everyone else.
@@ -48,6 +54,11 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+try:
+    from .panels import PANEL_USERNAME_PREFIX, is_panel_account
+except ImportError:  # imported on its own, by the unit tests
+    from panels import PANEL_USERNAME_PREFIX, is_panel_account
+
 GROUP_ADMIN = "system-admin"
 GROUP_USER = "system-users"
 GROUP_READONLY = "system-read-only"
@@ -57,6 +68,7 @@ MAINTENANCE_USERNAME = "dartec"
 KIND_OWNER = "owner"
 KIND_MAINTENANCE = "maintenance"
 KIND_SYSTEM = "system"
+KIND_PANEL = "panel"
 KIND_PERSON = "person"
 
 ROLE_OWNER = "owner"
@@ -130,7 +142,14 @@ def kind(user: dict) -> str:
         return KIND_OWNER
     if is_maintenance(user):
         return KIND_MAINTENANCE
+    if is_panel_account(user):
+        return KIND_PANEL
     return KIND_PERSON
+
+
+def panel_count(users: Iterable[dict]) -> int:
+    """How many room panel accounts the home has, for the panel's note."""
+    return sum(1 for u in users if kind(u) == KIND_PANEL)
 
 
 def is_admin(user: dict) -> bool:
@@ -152,7 +171,7 @@ def role(user: dict, guests: Iterable[str]) -> str:
 
 def household(users: Iterable[dict], guests: Iterable[str]) -> list[dict]:
     """The accounts the panel shows, owner first then by name: the owner and
-    every person. Maintenance and system accounts are left out."""
+    every person. Maintenance, panel and system accounts are left out."""
     guests = set(guests)
     shown = [{**u, "kind": kind(u), "role": role(u, guests)}
              for u in users if kind(u) in (KIND_OWNER, KIND_PERSON)]
@@ -162,7 +181,9 @@ def household(users: Iterable[dict], guests: Iterable[str]) -> list[dict]:
 
 def counts(users: Iterable[dict], guests: Iterable[str]) -> dict[str, int]:
     """What the manager may know: how many people, by role, and how many are
-    paused. No names, usernames or ids - those are the customer's."""
+    paused. No names, usernames or ids - those are the customer's. Room
+    panels are not people and are not counted; the snapshot reports them on
+    their own (`panels`)."""
     out = {ROLE_OWNER: 0, ROLE_ADMIN: 0, ROLE_FAMILY: 0, ROLE_GUEST: 0,
            ROLE_VIEW_ONLY: 0, "paused": 0, "total": 0}
     for user in household(users, guests):
@@ -195,6 +216,9 @@ def _changeable(target: dict) -> None:
         raise Refused("owner", "The owner's account cannot be changed here.")
     if what == KIND_MAINTENANCE:
         raise Refused("maintenance", "Dartec's support account is not managed here.")
+    if what == KIND_PANEL:
+        raise Refused("panel", "Room panels are set up by your installer and are not "
+                               "managed here.")
     if what == KIND_SYSTEM:
         raise Refused("system", "This account belongs to Home Assistant itself.")
 
@@ -236,6 +260,11 @@ def clean_username(username: Any) -> str:
                       "underscores, starting with a letter or number.")
     if username == MAINTENANCE_USERNAME:
         raise Refused("username_reserved", "That username is reserved for Dartec.")
+    if username.startswith(PANEL_USERNAME_PREFIX):
+        # Otherwise a person added as a regular user could later be read as a
+        # room panel, and changed or removed by the manager without consent.
+        raise Refused("username_panel", "Usernames starting with 'panel-' are kept "
+                                        "for room panels.")
     return username
 
 
