@@ -12,7 +12,8 @@ For each Home Assistant version given, this:
 4. waits for snapshots and for the answer to a `registry_query` command;
 5. checks that the devices the agent reported are exactly the devices Home
    Assistant's own API lists, with the right names and areas (one device is
-   put in an area first, since the demo leaves them all room-less);
+   put in an area first, since the demo leaves them all room-less), and the
+   area id beside each name;
 6. rotates the HACS token with `hacs_token_set` against a stand-in HACS
    (`hacs_stub/`) that reloads itself from an update listener the way HACS
    does, and checks the entry is still loaded, running with the new token,
@@ -26,7 +27,8 @@ For each Home Assistant version given, this:
 8. takes demo devices down, labels one as expected-offline and drains a
    battery through Home Assistant's own APIs (`device_health_setup.py`), and
    checks the agent's `offline_devices` and `batteries` sections report
-   exactly what Home Assistant was told — no more, no less;
+   exactly what Home Assistant was told — no more, no less — and that every
+   device row carries `available` and `last_seen` to match;
 9. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
@@ -360,7 +362,28 @@ def check_device_health(name: str, token: str, timeout: float) -> tuple[list[str
                         "must not count)")
     if snap.get("device_health_error"):
         problems.append(f"the device health collector failed: {snap['device_health_error']}")
-    return problems, {"offline": list(offline.values()), "batteries": batteries}
+
+    # Per-device presence on the device rows themselves, which the manager
+    # reads for every planned device rather than only the ones down.
+    rows = {row.get("id"): row for row in snap.get("devices") or []}
+    presence = {}
+    for device_id, expected in ((offline_id, False), (truth["labelled"], False),
+                                (truth["half_down"], True)):
+        row = rows.get(device_id) or {}
+        presence[device_id] = (row.get("available"), row.get("last_seen"))
+        if row.get("available") is not expected:
+            problems.append(f"device {device_id} has available={row.get('available')!r}, "
+                            f"expected {expected}")
+        if not row.get("last_seen"):
+            problems.append(f"device {device_id} has no last_seen: {row}")
+    if not any(row.get("available") is True for row in rows.values()):
+        problems.append("no device row reports available=True")
+    missing = [device_id for device_id, row in rows.items()
+               if "available" not in row or "last_seen" not in row]
+    if missing:
+        problems.append(f"device rows without available/last_seen: {missing[:5]}")
+    return problems, {"offline": list(offline.values()), "batteries": batteries,
+                      "presence": presence}
 
 
 def read_state(name: str, filename: str):
@@ -413,6 +436,12 @@ def check_devices(snapshot: dict, query: dict, truth: dict) -> list[str]:
                 problems.append(f"{source} row for {device_id} is "
                                 f"{(row.get('name'), row.get('manufacturer'), row.get('area'))}, "
                                 f"Home Assistant says {(name, device.get('manufacturer'), area)}")
+                break
+            # The id beside the name, which the manager keys room pairs on.
+            if row.get("area_id") != (device.get("area_id") or None):
+                problems.append(f"{source} row for {device_id} has area_id "
+                                f"{row.get('area_id')!r}, Home Assistant says "
+                                f"{device.get('area_id')!r}")
                 break
     if query.get("total") != len(expected):
         problems.append(f"registry_query total {query.get('total')} != {len(expected)}")

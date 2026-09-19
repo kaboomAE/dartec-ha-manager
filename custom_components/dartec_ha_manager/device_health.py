@@ -155,6 +155,35 @@ def device_offline(entities: Iterable[dict]) -> str | None:
     return max(changed) if changed else None
 
 
+def device_presence(entities: Iterable[dict]) -> tuple[bool | None, str | None]:
+    """Whether a device is answering, and when it was last heard from.
+
+    For the per-device `available` and `last_seen` on snapshot device rows,
+    which the manager needs for every planned device rather than only the
+    ones already down. `entities` are shaped as for `device_offline`, plus
+    `last_updated`.
+
+    `available` follows the same rule as `device_offline` — False only when
+    every entity that should hold a state is `unavailable` or `unknown` — but
+    without the alerting exclusions: a device labelled expected-offline is
+    still reported as unreachable here, because this is a fact about the
+    device, not a decision to page anyone. None when nothing on the device can
+    be judged (a device made only of buttons, or with every entity disabled).
+
+    `last_seen` is the latest `last_updated` among the device's running
+    entities (`last_updated` is never earlier than `last_changed`, so this is
+    the most recent of the two). For a device that is down it is the moment
+    the last entity went down. Home Assistant resets both on restart, so after
+    one this can be the restart time.
+    """
+    running = [e for e in entities if not e.get("disabled") and e.get("state") is not None]
+    judged = [e for e in running if e.get("domain") not in STATELESS_DOMAINS]
+    available = None if not judged else any(e["state"] not in DOWN_STATES for e in judged)
+    stamps = [e.get("last_updated") or e.get("last_changed") for e in running]
+    stamps = [s for s in stamps if s]
+    return available, (max(stamps) if stamps else None)
+
+
 def device_is_judged(device: dict, loaded_entries: set[str]) -> bool:
     """Whether a device can be called offline at all (rules 1, 2, 4, 5)."""
     if device.get("disabled") or device.get("entry_type") == "service":

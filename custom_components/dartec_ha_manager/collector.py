@@ -206,13 +206,25 @@ def registry_context(hass: HomeAssistant) -> dict:
     entities = er.async_get(hass)
 
     entities_per_device: dict[str, int] = {}
+    facts_per_device: dict[str, list[dict]] = {}
     for reg in entities.entities.values():
         if reg.device_id:
             entities_per_device[reg.device_id] = entities_per_device.get(reg.device_id, 0) + 1
+            state = hass.states.get(reg.entity_id)
+            facts_per_device.setdefault(reg.device_id, []).append({
+                "domain": reg.domain,
+                "state": state.state if state else None,
+                "last_changed": device_health._iso(state.last_changed) if state else None,
+                "last_updated": device_health._iso(state.last_updated) if state else None,
+                "disabled": reg.disabled_by is not None,
+            })
 
     return {
         "area_names": {area.id: area.name for area in ar.async_get(hass).async_list_areas()},
         "entities_per_device": entities_per_device,
+        # (available, last_seen) per device; see device_health.device_presence.
+        "presence": {device_id: device_health.device_presence(facts)
+                     for device_id, facts in facts_per_device.items()},
         "device_area_id": {device.id: device.area_id for device in all_devices(devices)},
         "devices": devices,
         "entities": entities,
@@ -221,6 +233,7 @@ def registry_context(hass: HomeAssistant) -> dict:
 
 def device_row(device, ctx: dict) -> dict:
     area_names = ctx["area_names"]
+    available, last_seen = ctx["presence"].get(device.id, (None, None))
     return {
         "id": device.id,
         "name": device.name_by_user or device.name,
@@ -229,6 +242,14 @@ def device_row(device, ctx: dict) -> dict:
         "sw_version": device.sw_version,
         "hw_version": device.hw_version,
         "area": area_names.get(device.area_id) if device.area_id else None,
+        # The id beside the name. An area can be renamed, and two can share a
+        # name; the manager keys confirmed room pairs on the id, and reads the
+        # name only from older agents, which do not send it.
+        "area_id": device.area_id or None,
+        # Whether the device is answering and when it was last heard from, for
+        # every device rather than only the ones in `offline_devices`.
+        "available": available,
+        "last_seen": last_seen,
         "via_device": bool(device.via_device_id),
         "disabled": device.disabled_by is not None,
         "entry_type": str(device.entry_type) if device.entry_type else None,
@@ -258,6 +279,7 @@ def entity_row(reg, ctx: dict, hass: HomeAssistant) -> dict:
         "platform": reg.platform,
         "device_class": reg.device_class or reg.original_device_class,
         "area": ctx["area_names"].get(area_id) if area_id else None,
+        "area_id": area_id or None,
         "device_id": reg.device_id,
         # "config"/"diagnostic" entities are plumbing, not things a resident
         # wants on a dashboard — the compiler filters on this.
@@ -297,6 +319,7 @@ def unregistered_rows(hass: HomeAssistant, registered: set[str]) -> list[dict]:
             "platform": None,
             "device_class": state.attributes.get("device_class"),
             "area": None,
+            "area_id": None,
             "device_id": None,
             "entity_category": None,
             "disabled": False,

@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
                        / "dartec_ha_manager"))
 
 from device_health import (EXPECTED_OFFLINE_LABEL, battery_reading,  # noqa: E402
-                           device_is_judged, device_offline, summarize_batteries)
+                           device_is_judged, device_offline, device_presence,
+                           summarize_batteries)
 
 
 class TestReadingABattery:
@@ -137,3 +138,55 @@ class TestWhichDevicesAreJudged:
     def test_the_label_opts_a_device_out(self):
         assert not device_is_judged({"labels": {EXPECTED_OFFLINE_LABEL},
                                      "config_entries": {"entry-1"}}, self.LOADED)
+
+
+class TestPresence:
+    """`available` and `last_seen` on every device row, not only the down ones."""
+
+    @staticmethod
+    def entity(state, domain="sensor", updated="2026-09-19T10:00:00+00:00", **extra):
+        return {"domain": domain, "state": state, "last_changed": updated,
+                "last_updated": updated, "disabled": False, "labels": (), **extra}
+
+    def test_one_answering_entity_makes_the_device_available(self):
+        available, _ = device_presence([self.entity("unavailable"), self.entity("21.5")])
+        assert available is True
+
+    def test_every_entity_down_makes_it_unavailable(self):
+        available, last_seen = device_presence([
+            self.entity("unavailable", updated="2026-09-19T08:00:00+00:00"),
+            self.entity("unknown", updated="2026-09-19T09:00:00+00:00")])
+        assert available is False
+        assert last_seen == "2026-09-19T09:00:00+00:00", "the moment the last one went down"
+
+    def test_last_seen_is_the_latest_update_not_the_latest_change(self):
+        """A sensor re-reporting the same value moves last_updated only."""
+        available, last_seen = device_presence([
+            self.entity("on", updated="2026-09-19T08:00:00+00:00"),
+            {**self.entity("21.5"), "last_changed": "2026-09-18T00:00:00+00:00",
+             "last_updated": "2026-09-19T11:30:00+00:00"}])
+        assert (available, last_seen) == (True, "2026-09-19T11:30:00+00:00")
+
+    def test_a_device_of_buttons_cannot_be_judged(self):
+        """A never-pressed button reads `unknown`; that says nothing about the device."""
+        available, last_seen = device_presence([self.entity("unknown", domain="button")])
+        assert available is None
+        assert last_seen == "2026-09-19T10:00:00+00:00"
+
+    def test_disabled_entities_and_missing_states_are_ignored(self):
+        available, last_seen = device_presence([
+            self.entity("unavailable", disabled=True),
+            {"domain": "sensor", "state": None, "disabled": False}])
+        assert (available, last_seen) == (None, None)
+
+    def test_the_expected_offline_label_does_not_hide_a_fact(self):
+        """The label stops alerts; it does not make a dead device answer."""
+        available, _ = device_presence([self.entity("unavailable",
+                                                    labels=(EXPECTED_OFFLINE_LABEL,))])
+        assert available is False
+
+    def test_it_agrees_with_device_offline(self):
+        down = [self.entity("unavailable"), self.entity("unknown")]
+        up = [self.entity("unavailable"), self.entity("on")]
+        assert (device_presence(down)[0] is False) == (device_offline(down) is not None)
+        assert (device_presence(up)[0] is True) == (device_offline(up) is None)
