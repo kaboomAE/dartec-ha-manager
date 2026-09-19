@@ -113,6 +113,11 @@ NO_TARGET_SERVICES = frozenset({
 SENSITIVE_ACTIONS = frozenset({
     # Standing access to the home.
     "user_create", "user_update", "user_set_password", "user_delete",
+    # A room panel's account is standing access too: a login that works on
+    # the home network for as long as it exists, with a password the manager
+    # relayed. Creating one, or resetting its password, is the same decision
+    # as `user_create`. The other panel commands are routine; see below.
+    "panel_setup",
     # Code entering the home. `agent_update` replaces this integration and
     # `hacs_install` adds a third-party one, so both are remote code
     # deployment however routine they feel.
@@ -149,6 +154,20 @@ SENSITIVE_ACTIONS = frozenset({
 # has to reach every home, including ones nobody will open a window on.
 # Confirmed by the owner on 2026-09-17. Reversing it is one line: add
 # "hacs_token_set" to SENSITIVE_ACTIONS.
+
+# `panel_update`, `panel_remove` and `panel_status` are deliberately NOT in
+# the set above: they are routine. None of them can grant anything. Each one
+# acts only on a panel account (`panels.is_panel_account`: a `panel-` username
+# on an account that is not the owner, not Home Assistant's own and not an
+# administrator) and refuses any other account, so they cannot reach a
+# person's login. `panel_update` changes only a panel's name and which of the
+# home's non-admin dashboards it opens on, and hides the rest of its sidebar;
+# it cannot change its password, its group, whether it is active or where it
+# may sign in from. `panel_remove` only takes access away, and removing a
+# panel should never have to wait for someone to be at home: a tablet taken
+# off the wall, or a password that got out, is exactly when it is needed.
+# `panel_status` reads. The updates and removals are written to the home's
+# logbook all the same (commands.py).
 
 # `blueprint_install` is deliberately NOT in the set above, because whether it
 # is sensitive depends on the command rather than the action. See is_sensitive.

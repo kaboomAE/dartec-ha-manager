@@ -85,6 +85,15 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
             hass, [user_dict(u) for u in await hass.auth.async_get_users()])
     except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
         _LOGGER.debug("household collect failed: %s", err)
+    # Room panels: each panel account's first dashboard and whether and when
+    # it last signed in, so the manager can say a wall tablet is working.
+    # Ids, usernames and times; never an address.
+    try:
+        from .panel_cmds import panel_rows
+
+        snapshot["panels"] = await panel_rows(hass)
+    except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
+        _LOGGER.debug("panels collect failed: %s", err)
 
     # Host metrics: psutil reads /proc, which is host-wide even inside the HA
     # container — so CPU/memory/uptime are true SYSTEM usage on every install
@@ -139,6 +148,9 @@ def _collect_core(hass: HomeAssistant, agent_version: str | None) -> dict:
             "version": ha_version,
             "agent_version": agent_version,
             "location_name": hass.config.location_name,
+            # The home's language, so the manager can title what it puts on
+            # the home's screens (room dashboards) in it.
+            "language": hass.config.language,
             "installation_type": "Home Assistant OS" if os.environ.get("SUPERVISOR_TOKEN")
                                  else "Container/Core",
             "update_available": False,  # refined by Supervisor data when available

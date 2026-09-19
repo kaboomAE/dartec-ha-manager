@@ -344,3 +344,45 @@ class TestTheLogbookLine:
         line = h.summary("password", "Maryam", "Sam", {"password": GOOD, "signed_out": True})
         assert GOOD not in line
         assert line == "Maryam set a new password for Sam and signed them out everywhere"
+
+
+class TestRoomPanelsAreNotPeople:
+    """A room panel's account (panels.py) is the installer's wall tablet, not
+    a member of the household: never listed, counted or changed here, and its
+    username prefix is not given to a person."""
+
+    PANEL = user("u-panel", "Kitchen panel", username="panel-kitchen", local_only=True)
+    WITH_PANEL = HOME + [PANEL]
+
+    def test_its_kind(self):
+        assert h.kind(self.PANEL) == "panel"
+
+    def test_an_admin_with_a_panel_username_is_a_person(self):
+        """Only a non-admin can be a panel, so the manager's routine panel
+        commands can never reach someone who can manage the home."""
+        assert h.kind(user("u-x", "Tester", username="panel-test",
+                           groups=("system-admin",))) == "person"
+
+    def test_not_in_the_list_and_not_counted(self):
+        assert "u-panel" not in {u["id"] for u in h.household(self.WITH_PANEL, GUESTS)}
+        assert h.counts(self.WITH_PANEL, GUESTS) == h.counts(HOME, GUESTS)
+
+    def test_the_panel_can_say_how_many(self):
+        assert h.panel_count(self.WITH_PANEL) == 1
+        assert h.panel_count(HOME) == 0
+
+    def test_cannot_be_changed_here(self):
+        refused("panel", h.check_update, OWNER, self.WITH_PANEL, "u-panel",
+                {"name": "X"}, GUESTS)
+        refused("panel", h.check_remove, OWNER, self.WITH_PANEL, "u-panel")
+        refused("panel", h.check_reset_password, OWNER, self.WITH_PANEL, "u-panel", GOOD)
+        refused("panel", h.check_dashboard, OWNER, self.WITH_PANEL, "u-panel", None, [])
+
+    @pytest.mark.parametrize("username", ["panel-kids", "Panel-Kids", "panel-"])
+    def test_a_new_person_cannot_be_given_the_prefix(self, username):
+        refused("username_panel", h.check_create, OWNER, HOME,
+                {"name": "Kids", "username": username, "password": GOOD, "role": "family"})
+
+    def test_a_username_merely_containing_panel_is_fine(self):
+        h.check_create(OWNER, HOME, {"name": "Pat", "username": "solar.panel-fan",
+                                     "password": GOOD, "role": "family"})

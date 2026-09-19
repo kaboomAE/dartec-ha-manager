@@ -91,6 +91,33 @@ have each role, never their names.
 **Every change is recorded** in your home's logbook (Activity in the sidebar),
 with the name of whoever made it, and under **Recent changes** in My Home.
 
+## Room panels
+
+A **room panel** is a screen on the wall, such as a tablet, that shows the
+controls for one room. Your installer sets each one up with its own account,
+named `panel-` and the room (for example `panel-kitchen`). My Home says how
+many there are ("Room panels set up by your installer: 2"). They are not
+members of your household, are not listed or counted with the people, and
+can't be changed from My Home. For the same reason, a person's username can't
+start with `panel-`.
+
+**What a room panel's account can do.** Be aware of this, the same way as for
+guests:
+
+- It opens on its room's page, and the other pages are hidden from its menu.
+  The installer also sets **Always hide the sidebar** on the panel itself: that
+  is a setting of the screen's browser, not of the account.
+- It can only sign in at home, on your Wi-Fi, and it can't change settings or
+  manage people.
+- **This keeps the screen on its room. It is not a lock.** Home Assistant has
+  no per-device permissions, so a panel's account can still control every
+  device in the home through Home Assistant, like any family member's. Treat
+  its password like a house key, and ask your installer to remove the panel's
+  account when the screen is taken down.
+
+Every time Dartec sets up, moves or removes a room panel, a line is written in
+your home's logbook.
+
 ---
 
 # بيتي — أفراد منزلك
@@ -163,3 +190,25 @@ Home Assistant الخاصة بالنظام.
 
 كل تغيير يُكتب في سجلّ منزلك مع اسم من قام به. لا يُرسَل شيء من "بيتي" إلى
 Dartec: نرى فقط عدد الأشخاص في كل دور، ولا نرى أسماءهم أبدًا.
+
+## شاشات الغرف
+
+**شاشة الغرفة** شاشة معلّقة على الجدار، مثل جهاز لوحي، تعرض التحكم بغرفة
+واحدة. يُعدّ المركّب لكل شاشة حسابًا خاصًا بها، يبدأ اسمه بـ `panel-` ثم اسم
+الغرفة (مثل `panel-kitchen`). تذكر "بيتي" عددها ("شاشات الغرف التي أعدّها
+المركّب: 2"). ليست من أفراد منزلك، ولا تظهر ولا تُحسب مع الأشخاص، ولا يمكن
+تغييرها من "بيتي". ولهذا لا يجوز أن يبدأ اسم مستخدم أي شخص بـ `panel-`.
+
+**ماذا يستطيع حساب شاشة الغرفة أن يفعل.** انتبه لهذا كما في حالة الضيوف:
+
+- يفتح على صفحة غرفته، والصفحات الأخرى مخفية من قائمته. ويضبط المركّب أيضًا
+  **إخفاء الشريط الجانبي دائمًا** على الشاشة نفسها: هذا إعداد في متصفح
+  الشاشة، وليس في الحساب.
+- لا يدخل إلا من المنزل عبر شبكة Wi-Fi المنزلية، ولا يغيّر الإعدادات ولا يدير
+  الأفراد.
+- **هذا يُبقي الشاشة على غرفتها، وليس قفلًا.** لا يستطيع Home Assistant حصر
+  حساب ببعض الأجهزة، فيستطيع حساب الشاشة التحكم بكل أجهزة المنزل عبر
+  Home Assistant مثل أي فرد من العائلة. تعامل مع كلمة مروره كمفتاح البيت، واطلب
+  من المركّب حذف حساب الشاشة عند إزالتها.
+
+كلما أعدّت Dartec شاشة غرفة أو نقلتها أو أزالتها، يُكتب سطر في سجلّ منزلك.
