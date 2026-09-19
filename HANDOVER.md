@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.21.2 (released 2026-09-19)
+**Current version**: 0.22.0 (released 2026-09-19)
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -387,6 +387,7 @@ check.
 | 0.21.0 | **The brand's old spelling, and Dwains' card picker** (dartec-ha-manager#25). The snapshot gains `frontend_theme` (default themes as stored and as running, and the loaded theme names: HA silently runs its own default when the stored name is missing, as for `DarTec` after dartec-theme v1.1.0) and `branding` (`enabled`, `title`). New `lovelace_update` renames a storage dashboard (answers `previous_title`, logbook line). The agent corrects "DarTec" in its own entry title at setup. `www/dashboard-fix.js` moves Dwains' Add card picker inside `<home-assistant>` so HA 2026.7+ gives its previews their formatters (upstream dwains-dashboard-next#18; owner decision 2026-09-19). `hardware.py` renamed `machine.py` so HA 2026.5–2026.6 stop loading it as a hardware platform (#27). LICENSE: Dartec Smart Homes. Released 2026-09-19 |
 | 0.21.1 | `www/dashboard-fix.js` hands Dwains' card editor its config back after every `config-changed`, so an entity chosen in the Add card editor no longer goes blank after a few seconds or gets wiped by the next change (upstream dwains-dashboard-next#19; reproduced with the agent removed). Released 2026-09-19 |
 | 0.21.2 | `www/dashboard-fix.js` carries `home_custom_cards` through Dwains' dashboard and view strategy generators, so Home custom cards saved in Dwains' settings show after a reload (upstream dwains-dashboard-next#20; reproduced with only Dwains installed). Released 2026-09-19 |
+| 0.22.0 | **Area ids and per-device presence in the snapshot** (#37). Device and entity rows carry `area_id` beside `area` (the name stays for older managers). Device rows gain `available` (the `device_offline` rule without the alerting exclusions, so a device labelled expected-offline still reports `false`; `null` when nothing on it can be judged) and `last_seen` (latest `last_updated` among its running entities). The inventory digest is unchanged. The manager compares room pairs by area id when present (dartec-ha-manager-server#36). Released 2026-09-19 |
 
 ---
 
