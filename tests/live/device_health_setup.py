@@ -117,6 +117,11 @@ async def main(token: str) -> None:
             "offline": [device_of("sensor.outside_humidity")],
             "not_offline": [device_of("cover.kitchen_window"),
                             device_of("sensor.outside_temperature")],
+            # For the per-device `available` flag: the labelled device is still
+            # unreachable (the label silences alerts, it does not change the
+            # fact), and the half-down one is still answering.
+            "labelled": device_of("cover.kitchen_window"),
+            "half_down": device_of("sensor.outside_temperature"),
             "batteries": batteries,
         }))
 
