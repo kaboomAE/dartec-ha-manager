@@ -395,6 +395,28 @@ def read_state(name: str, filename: str):
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
+def check_brand(base: str, token: str, version: str) -> list[str]:
+    """Home Assistant 2026.3+ serves a custom integration's own brand/ images
+    through its brands proxy, ahead of the brands CDN. Ask it for each one and
+    compare with the file in the repository, byte for byte."""
+    if version_tuple(version) < (2026, 3):
+        return []
+    problems = []
+    for image in sorted(p.name for p in (AGENT / "brand").glob("*.png")):
+        url = f"{base}/api/brands/integration/{AGENT_DOMAIN}/{image}"
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                served = response.read()
+        except urllib.error.HTTPError as err:
+            problems.append(f"brand {image}: Home Assistant answered {err.code}")
+            continue
+        if served != (AGENT / "brand" / image).read_bytes():
+            problems.append(f"brand {image}: Home Assistant served {len(served)} bytes "
+                            "that are not the repository's file")
+    return problems
+
+
 def ha_log(name: str) -> str:
     """The log file, or the console if there is no file yet.
 
@@ -570,6 +592,11 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         problems += health_problems
         log(f"{version}: device health: {len(health.get('offline', []))} offline, "
             f"batteries {[b.get('level') for b in health.get('batteries', [])]}")
+
+        brand_problems = check_brand(base, token, running)
+        problems += brand_problems
+        log(f"{version}: brand images served by Home Assistant: "
+            f"{'ok' if not brand_problems else len(brand_problems)}")
 
         text = ha_log(name)
         # The deprecation boundary is judged on what is running, so `stable`
