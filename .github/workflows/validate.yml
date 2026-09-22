@@ -47,9 +47,10 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # brands requires a merged PR to home-assistant/brands — needed for
+          # brands requires a merged PR to home-assistant/brands, needed for
           # HACS default-store inclusion, not for custom-repository installs.
-          # Remove this ignore once that PR lands.
+          # Home Assistant itself shows the icon from brand/ (2026.3+); this
+          # check does not look there. Remove the ignore once a brands PR lands.
           ignore: brands
 
   unit:

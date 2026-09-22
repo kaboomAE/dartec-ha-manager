@@ -116,3 +116,13 @@ Copy `custom_components/dartec_ha_manager/` into your HA `config/custom_componen
 ## Supported installations
 
 All install types (HA OS, Supervised, Container, Core) on HA 2024.6 or newer. Add-on management and full host metrics require HA OS/Supervised; other install types degrade gracefully.
+
+## Icon and logo
+
+Home Assistant 2026.3 and later shows the Dartec mark for this integration (Settings, Devices and services, and the add integration dialog) from `custom_components/dartec_ha_manager/brand/`. It reads that folder ahead of the `home-assistant/brands` CDN, so nothing has to be submitted there. It holds `icon.png` and `logo.png` with `dark_` variants, each at 1x and `@2x`, at the brands repository's sizes (icons 256 and 512 square, logos 128 and 256 tall). Older Home Assistant versions ignore the folder and show a placeholder.
+
+HACS is the exception: its store still takes icons from its own data service, which only knows integrations in `home-assistant/brands` ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)), so HACS shows a blank icon for now.
+
+The images are rendered, not drawn, by the Dartec brand builder in the internal onboarding repository (`scripts/brand/build-icons.mjs --integration=<this checkout>`) from the brand's own SVGs. Regenerate them there.
+
+What it looks like in Home Assistant 2026.9.2, from the live test's container: [integrations, light](docs/brand/ha-integrations-light.png), [integrations, dark](docs/brand/ha-integrations-dark.png), [the integration's page, light](docs/brand/ha-integration-page-light.png) and [dark](docs/brand/ha-integration-page-dark.png). The live test checks on every push that Home Assistant serves each file in `brand/` unchanged.
