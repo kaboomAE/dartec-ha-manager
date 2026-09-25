@@ -306,10 +306,10 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
 
     if hass.data.get(f"{__name__}.registered"):
         return
+    www_dir = Path(__file__).parent / "www"
     try:
         from homeassistant.components.http import StaticPathConfig
 
-        www_dir = Path(__file__).parent / "www"
         await hass.http.async_register_static_paths(
             [StaticPathConfig(URL_BASE, str(www_dir), True)])
     except Exception as err:  # noqa: BLE001 — older cores, or already registered
@@ -327,9 +327,23 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
     # no variable to override, so a theme cannot reach it. Injected here rather
     # than given its own registration because it rides the same static path and
     # the same mechanism; it carries no configuration and does nothing on homes
-    # that do not run that dashboard. See www/dashboard-fix.js.
-    add_extra_js_url(hass, DASHBOARD_FIX_PATH)
+    # that do not run that dashboard. See www/dashboard-fix.js. It also
+    # declares the brand's fonts (www/fonts).
+    #
+    # A content hash as the cache buster: the static path is served with a
+    # 31-day cache, so without it a browser could keep the previous agent's
+    # copy for a month after an update. An update restarts Home Assistant,
+    # which registers the URL again with the new hash.
+    fix_stamp = await hass.async_add_executor_job(_file_stamp, www_dir / "dashboard-fix.js")
+    add_extra_js_url(hass, f"{DASHBOARD_FIX_PATH}?v={fix_stamp}")
     hass.data[f"{__name__}.registered"] = True
+
+
+def _file_stamp(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+    except OSError:
+        return "0"
 
 
 async def branding_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:

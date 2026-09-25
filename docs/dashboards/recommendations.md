@@ -190,6 +190,7 @@ Ranked by benefit to the family first, then by effort. Each section says whether
 - **Evidence:** [dartec-variants/README.md#fonts](dartec-variants/README.md#fonts)
 - **Benefit:** Medium: the brand's typography in every home, and correctly sized Arabic. **Effort:** S–M. **Risk:** Low–medium: an unsupported HA variable (`--ha-font-family-body`) to re-check each release; Dubai's licence.
 - **Issue:** [#59](https://github.com/kaboomAE/dartec-ha-manager/issues/59)
+- **Status (2026-09-26):** approved by the owner on condition that Dubai's licence allows it. It does not (TEC's EULA forbids redistribution), so the agent ships **Lateef and IBM Plex Mono only**, both unmodified with their OFL text; Latin text uses the theme's next face. See [dartec-variants/README.md#fonts](dartec-variants/README.md#fonts). Not yet released.
 
 ## R16
 

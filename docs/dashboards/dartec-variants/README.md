@@ -306,6 +306,49 @@ The `@font-face` rules used on the bench:
   If it does not allow redistribution, serve Dubai from the private manager
   instead, or use a system Latin font in HA.
 
+**What shipped (R15, dartec-ha-manager#59, approved 2026-09-26):** option 1,
+without Dubai. The agent serves Lateef (400, 500, 600–700) and IBM Plex Mono
+Medium from `/dartec_branding/fonts/` and declares them from
+`dashboard-fix.js`, with the rules above: Lateef Arabic only, at 150%.
+
+- **Dubai is left out.** Its EULA (The Executive Council of Dubai) grants a
+  "non-transferable, non-sublicensable" licence for the licensee's "own
+  personal or internal business purposes only" (2.2), forbids anyone to
+  "further distribute (whether commercially or otherwise)" it (3.1(d)) or
+  "make available, the Font Software in any form … to any person without the
+  prior written consent of TEC" (3.1(i)). A public repository cannot meet
+  that. Serving it from the manager instead does not clearly meet it either:
+  web use must be "in a secure manner which does not allow an End User to
+  access the Font Software outside of the Digital Product" (2.2(e)), and a
+  font file handed to a browser can be saved. Dubai needs TEC's written
+  consent (info@dubaifont.com, clause 8.1).
+- **The storefront's web files are not used.** They are subsets that keep the
+  names "Lateef" and "Plex", which both fonts reserve, and the OFL does not
+  let a modified font keep a reserved name (condition 3; a subset is a
+  modification, OFL FAQ 2.6). The agent ships the unmodified fonts instead:
+  SIL's Lateef compressed to WOFF2 and nothing else (OFL FAQ 2.2.1), and IBM's
+  own Plex Mono web file. About 290 KB, fetched only on pages whose theme
+  names these families, Lateef only when Arabic is on the page. Details and
+  hashes: `custom_components/dartec_ha_manager/www/fonts/README.md`.
+- **The theme's stack** should read, until Dubai is licensed:
+  `ha-font-family-body` and `ha-font-family-heading`:
+  `"'Dartec Lateef', system-ui, Roboto, sans-serif"`;
+  `ha-font-family-code`: `"'Dartec Plex Mono', 'IBM Plex Mono', ui-monospace, monospace"`.
+  The drafts below still name `'Dartec Dubai'` first; with no such face
+  declared, browsers skip it, so they render the same.
+- **Proved on the bench (2026-09-26, HA 2026.9.3)** with the agent at the
+  commit that shipped it, the Dartec theme applied in the test browser with
+  the stack above, and the agent put back to 0.23.0 afterwards. Arabic pages
+  fetched Lateef from `/dartec_branding/fonts/` (200, `font/woff2`) and set
+  it; English pages and a dashboard with no Arabic text fetched nothing.
+  Before and after, English and Arabic, light and dark:
+  [profile, tablet](../fonts/r15-profile-tablet-before-after.webp),
+  [Arabic detail](../fonts/r15-arabic-detail-before-after.webp),
+  [bedroom, phone](../fonts/r15-bedroom-phone-before-after.webp). (The theme
+  picker reads "Dartec" only in the after shots because another bench test
+  set that account's theme between the runs; both runs render the same
+  in-browser theme.)
+
 **What a theme cannot do with fonts:**
 
 - **Arabic line height.** The brand asks for +18% on Arabic lines. HA's

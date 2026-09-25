@@ -36,6 +36,53 @@
 //
 // A third, in the same dialog: its card editor forgets what was chosen in it
 // after a few seconds (dwains-dashboard-next#19). See the listener below.
+//
+// And, unrelated to Dwains, the brand's fonts (dartec-ha-manager#59): the
+// next block, first because it needs nothing else to have loaded.
+
+// The brand's fonts, so the Dartec themes' font variables resolve
+// (dartec-ha-manager#59). A theme can name a font but cannot load one: a
+// theme variable cannot hold @font-face or the files. So the faces are
+// declared here, on the document, where every shadow root inherits them, and
+// the files come from the agent's own static path (www/fonts, with their
+// licences and where each came from).
+//
+// The rules are the ones proven on the bench (docs/dashboards/
+// dartec-variants/README.md#fonts). Lateef is Arabic only and set 150% larger:
+// its letters are small for their size, and this is the storefront's own
+// rule. Dubai, the brand's Latin face, is not here: its licence does not allow
+// this public repository to publish it (www/fonts/README.md), so Latin text
+// takes the next face in the theme's stack.
+//
+// Costs nothing on a home whose theme does not name these families: a
+// browser fetches a declared face only when text on the page uses it, and
+// Lateef only for Arabic characters.
+(() => {
+  const ID = "dartec-fonts";
+  const BASE = "/dartec_branding/fonts/";
+  const ARABIC = "U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF";
+  const lateef = (weight, file) =>
+    `@font-face { font-family: "Dartec Lateef"; font-weight: ${weight}; ` +
+    `src: url("${BASE}${file}") format("woff2"); size-adjust: 150%; unicode-range: ${ARABIC}; }`;
+  const CSS = [
+    lateef("400", "Lateef-Regular.woff2"),
+    lateef("500", "Lateef-Medium.woff2"),
+    lateef("600 700", "Lateef-Bold.woff2"),
+    `@font-face { font-family: "Dartec Plex Mono"; font-weight: 500; ` +
+      `src: url("${BASE}IBMPlexMono-Medium-Latin1.woff2") format("woff2"); }`,
+  ].join("\n");
+
+  try {
+    if (document.getElementById(ID)) return;  // loaded twice: once is enough
+    const style = document.createElement("style");
+    style.id = ID;
+    style.textContent = CSS;
+    (document.head || document.documentElement).appendChild(style);
+  } catch (err) {
+    /* no fonts: the theme's stack falls back to system faces, as before */
+  }
+})();
+
 (() => {
   const HOST = "dwains-dashboard-next-layout-card";
   const CSS = `
