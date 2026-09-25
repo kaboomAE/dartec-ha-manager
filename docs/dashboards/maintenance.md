@@ -48,7 +48,10 @@ What makes these risky for a **fleet** rather than for one hobbyist:
 - **The latest release by default.** The manager's HACS installs take HACS's
   `available_version`. That is fine for a theme. For JavaScript it means an
   untested release reaches every home at the next rollout. The agent's
-  downgrade guard prevents going backwards, not forwards.
+  downgrade guard prevents going backwards, not forwards. *Since R11 (agent,
+  not yet released) the agent refuses an install without an exact version;
+  the manager's catalogue has to send one
+  ([dartec-ha-manager-server#57](https://github.com/kaboomAE/dartec-ha-manager-server/issues/57)).*
 - **Updates are not staged by us.** A HACS frontend update is not part of
   guarded updates' test-then-roll-out ring.
 - **GitHub device login.** Installing HACS itself needs an interactive GitHub

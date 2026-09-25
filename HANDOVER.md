@@ -53,7 +53,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `lovelace_cmds.py` | Dashboard read/create/save |
 | `registry_cmds.py` | Areas, floors, device and entity assignment |
 | `user_cmds.py` | Home Assistant user accounts |
-| `hacs_cmds.py` | HACS install/list, **including the downgrade guard** |
+| `hacs_cmds.py` | HACS install/list: **an exact `version` on every install** (`LATEST_ALLOWED` is the one exception) and the downgrade guard |
 | `hacs_token.py` | The GitHub token in HACS's config entry: its fingerprint for the snapshot, and `hacs_token_set`. No HA imports |
 | `home_cmds.py` | Themes, branding, agent self-update, HA restart |
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
@@ -326,6 +326,23 @@ check.
   websocket (0.2.1).
 
 **HACS**
+- **Every `hacs_install` names its version** (#54, owner decision 2026-09-26).
+  `version` is a release tag as HACS names it (`v1.8.0`, `5.0.15`) or a commit
+  hash, never a branch; it goes to HACS's own `hacs/repository/download`
+  unchanged. Without one the answer is `code: "version_required"` and HACS is
+  not even told about the repository, except `only_if_missing` on something
+  already installed, which downloads nothing. An older version is
+  `code: "downgrade"` (unless `allow_downgrade`); HACS recording another
+  release after the download is `code: "version_mismatch"` (`changed: true`).
+  The one exception is `agent_update`, which takes this repository's latest
+  release under the guarded-update decision of 2026-09-18; it is a keyword
+  argument (`latest_ok`) no command can set, and `hacs_cmds.LATEST_ALLOWED`
+  lists it with who decided it. The manager's catalogues must send versions
+  before this reaches homes: dartec-ha-manager-server#57.
+- HACS records the tag it was given as `installed_version` (its
+  `async_download_repository` sets `ref`, and `version_to_download` returns it),
+  which is what the mismatch check reads back. A branch would record `None`
+  and show the commit instead, one more reason branches are refused.
 - Refresh the repository before deciding there is nothing to do — the cached
   index lags a release and reports "already up to date" (0.10.1).
 - A newly added repository reports `installed_version: None` even when the files
