@@ -207,10 +207,11 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                                "setting on this integration"}.get(
                 granted.get("source"), "under consent from this home")
             line = f"Dartec ran '{action}' {how}"
-            if action == "panel_setup":
+            if action in ("panel_setup", "hacs_install"):
                 # Which account, so the line means something to the household.
                 # The detail names the account and its dashboard, never the
-                # password (panel_cmds.py).
+                # password (panel_cmds.py). For an install, which repository
+                # and which exact version, or why nothing was installed.
                 line += (f": {result.get('detail')}" if result.get("ok")
                          else f"; not done: {result.get('detail')}")
             maintenance.logbook(hass, line)

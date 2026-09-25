@@ -1,6 +1,6 @@
 # Recommendations: ranked changes to Dartec's dashboards and room panels
 
-Ranked by benefit to the family first, then by effort. **None of these is implemented.** Each has its own GitHub issue so the owner can approve them one at a time. Most of the code lives in the manager (`dartec-ha-manager-server`, private); R6 and R11 change this repository; R10 changes `dartec-theme`; R3, R4 and R9 need the planner. Effort: S = about a day, M = a few days, L = a week or more.
+Ranked by benefit to the family first, then by effort. Each section says whether it has been implemented. Each has its own GitHub issue so the owner can approve them one at a time. Most of the code lives in the manager (`dartec-ha-manager-server`, private); R6 and R11 change this repository; R10 changes `dartec-theme`; R3, R4 and R9 need the planner. Effort: S = about a day, M = a few days, L = a week or more.
 
 | # | Change | Benefit | Effort | Risk | Issue |
 |---|---|---|---|---|---|
@@ -144,6 +144,7 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 - **Evidence:** [maintenance.md](maintenance.md)
 - **Benefit:** Medium–high: no untested frontend code reaches the fleet. **Effort:** M. **Risk:** Medium: the real home uses Dwains and must be migrated with care.
 - **Issue:** [#54](https://github.com/kaboomAE/dartec-ha-manager/issues/54)
+- **Status (2026-09-26):** agent side implemented, not yet released: `hacs_install` requires an exact `version` and refuses one without (`version_required`), with `agent_update`'s own latest release as the one owner-approved exception. The manager side (catalogue versions, owner approval, Dwains withdrawn for new homes) is [dartec-ha-manager-server#57](https://github.com/kaboomAE/dartec-ha-manager-server/issues/57). No live home is changed by either until the owner approves.
 
 ## R12
 
