@@ -89,6 +89,10 @@ install rather than a number somebody remembered to update in two places.
   then the rest, stopping at the first home that does not come back healthy.
   Turning **Allow Dartec to install approved updates** off stops it; with
   **Allow Dartec support** on, an update runs as it always did.
+- **Anything else Dartec installs through HACS** (a dashboard, a card, a
+  theme) is one exact, approved release, never simply whatever was published
+  last. An install without a version is refused, and so is one older than what
+  you already have. It still needs your consent like any other install.
 - Calls that would target the whole house at once (`entity_id: all`, or no
   target at all) are refused, as are calls that target by area, device, floor
   or label, and calls on this integration's own switches: those are yours.

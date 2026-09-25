@@ -147,10 +147,14 @@ async def agent_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
 
     # Pass our own running version: when the agent was installed by hand, HACS
     # has no record of it and would otherwise treat any release as an upgrade.
+    # `latest_ok`: this repository's latest release is the one exception to
+    # "every install names its version" (hacs_cmds.LATEST_ALLOWED records who
+    # decided it). No remote command can set it.
     installed = await hacs_install(hass, {"repo": AGENT_REPO, "category": "integration",
                                           "only_if_missing": False,
                                           "current_version": await async_agent_version(hass, DOMAIN),
-                                          "allow_downgrade": cmd.get("allow_downgrade", False)})
+                                          "allow_downgrade": cmd.get("allow_downgrade", False)},
+                                   latest_ok=True)
     if not installed.get("ok"):
         return {"ok": False, "detail": f"update failed: {installed.get('detail')}"}
 
