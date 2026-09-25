@@ -56,7 +56,10 @@
     "cancel": "Cancel",
     "close": "Close",
     "add_button": "Add person",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "language": "Language (optional)",
+    "language_default": "Their phone's or browser's language",
+    "language_note": "The language Home Assistant shows them in. They can change it on their own profile too."
   },
   "strength": {
     "0": "Too weak",
@@ -75,8 +78,9 @@
     "pause": "Pause access",
     "resume": "Resume access",
     "remove": "Remove from home",
-    "self_limits": "This is you. You can change your name and first dashboard here.",
-    "self_owner": "This is you, the home's owner. Change your password from your profile; here you can choose your first dashboard."
+    "self_limits": "This is you. You can change your name, first dashboard and language here.",
+    "self_owner": "This is you, the home's owner. Change your password from your profile; here you can choose your first dashboard and language.",
+    "language": "Choose language"
   },
   "password": {
     "title": "New password for {name}",
@@ -88,6 +92,9 @@
   },
   "dashboard": {
     "title": "First dashboard for {name}"
+  },
+  "language": {
+    "title": "Language for {name}"
   },
   "done": {
     "added_title": "{name} can sign in now",
@@ -112,7 +119,8 @@
     "paused": "{name} is paused",
     "resumed": "{name} can sign in again",
     "removed": "{name} was removed",
-    "dashboard": "First dashboard saved"
+    "dashboard": "First dashboard saved",
+    "language": "Language saved"
   },
   "activity": {
     "title": "Recent changes",
@@ -124,7 +132,8 @@
     "pause": "{by} paused {target}",
     "resume": "{by} resumed {target}",
     "update": "{by} changed {target}'s details",
-    "role": "{by} made {target} {role}"
+    "role": "{by} made {target} {role}",
+    "language": "{by} chose the language for {target}"
   },
   "about": {
     "title": "About roles and dashboards",
@@ -165,6 +174,7 @@
     "loopback": "The household can only be managed by someone signed in to this home.",
     "not_loaded": "The Dartec integration isn't running.",
     "unauthorized": "Only people who can manage the home can open this.",
-    "generic": "Something went wrong: {message}"
+    "generic": "Something went wrong: {message}",
+    "language_invalid": "Choose English or Arabic."
   }
 }

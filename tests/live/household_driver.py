@@ -147,7 +147,7 @@ async def main(owner_token: str) -> None:
                         "password": "q3vr-8kdm-ytn2", "role": "admin"}, "create Omar")
         await owner.ok({"type": f"{HH}/create", "name": "Layla", "username": "Layla ",
                         "password": "w7hz-p4kc-ma3e", "role": "family",
-                        "dashboard": "kids-room"}, "create Layla")
+                        "dashboard": "kids-room", "language": "ar"}, "create Layla")
         state = await owner.ok({"type": f"{HH}/create", "name": "Sam", "username": "sam",
                                 "password": "t9xe-2bqf-hj6u", "role": "guest",
                                 "local_only": False}, "create Sam")
@@ -157,6 +157,11 @@ async def main(owner_token: str) -> None:
         await owner.refused({"type": f"{HH}/create", "name": "Fake", "username": "dartec",
                              "password": "zz8k-3mdq-wp4r", "role": "family"},
                             "username_reserved", "the dartec username")
+        await owner.refused({"type": f"{HH}/create", "name": "Frida", "username": "frida",
+                             "password": "zz8k-3mdq-wp4r", "role": "family", "language": "fr"},
+                            "language_invalid", "a language Dartec does not set up")
+        check(person(state, "Layla").get("language") == "ar",
+              f"My Home lists Layla's language as {person(state, 'Layla').get('language')!r}")
 
         ha_users = {u["name"]: u for u in await owner.ok({"type": "config/auth/list"}, "auth list")}
         check(ha_users["Omar"]["group_ids"] == ["system-admin"], f"Omar: {ha_users['Omar']}")
@@ -176,6 +181,13 @@ async def main(owner_token: str) -> None:
             core = await layla.ok({"type": "frontend/get_user_data", "key": "core"}, "Layla core")
             check((core or {}).get("value", {}).get("default_panel") == "kids-room",
                   f"Layla's first dashboard is {core}")
+            # Her own locale, the shape the profile page writes, which is what
+            # turns Home Assistant right to left for her (#49).
+            lang = ((await layla.ok({"type": "frontend/get_user_data", "key": "language"},
+                                    "Layla language")) or {}).get("value") or {}
+            evidence["layla_language"] = lang
+            check(lang.get("language") == "ar" and lang.get("number_format") == "language",
+                  f"Layla's own language data is {lang}")
             her_panels = await layla.ok({"type": "get_panels"}, "Layla panels") or {}
             check("dartec-household" not in her_panels,
                   "a regular user was sent the household panel")
@@ -184,6 +196,7 @@ async def main(owner_token: str) -> None:
                                 "unauthorized", "non-admin remove")
 
         # Omar, an admin who is not the owner.
+        omar_uid = ha_users["Omar"]["id"]
         omar = await as_user(session, "omar", "q3vr-8kdm-ytn2")
         check(omar is not None, "Omar could not sign in")
         if omar:
@@ -202,6 +215,14 @@ async def main(owner_token: str) -> None:
             await omar.refused({"type": f"{HH}/set_password", "user_id": ha_users["Layla"]["id"],
                                 "password": "n4km-7wqa-zd2p"}, "owner_only",
                                "an admin setting a password")
+            # His own language, as on his profile; not the owner's.
+            await omar.ok({"type": f"{HH}/set_language", "user_id": omar_id, "language": "ar"},
+                          "Omar's own language")
+            await omar.refused({"type": f"{HH}/set_language", "user_id": owner_id,
+                                "language": "ar"}, "owner", "an admin setting the owner's language")
+            own = ((await omar.ok({"type": "frontend/get_user_data", "key": "language"},
+                                  "Omar language")) or {}).get("value") or {}
+            check(own.get("language") == "ar", f"Omar's own language data is {own}")
 
         # Dartec's own account may look, but not change anything here.
         dartec = await as_user(session, "dartec", "dartec-live-pw-9x7")
@@ -211,6 +232,8 @@ async def main(owner_token: str) -> None:
                   "Dartec's account was told it can manage the household")
             await dartec.refused({"type": f"{HH}/update", "user_id": ha_users["Layla"]["id"],
                                   "is_active": False}, "actor_maintenance", "Dartec pausing")
+            await dartec.refused({"type": f"{HH}/set_language", "user_id": ha_users["Layla"]["id"],
+                                  "language": "en"}, "actor_maintenance", "Dartec's language change")
         else:
             problems.append("Dartec's account could not sign in")
 
@@ -257,11 +280,29 @@ async def main(owner_token: str) -> None:
         await owner.refused({"type": f"{HH}/set_dashboard", "user_id": sam_id,
                              "url_path": "staff-only"}, "dashboard_unknown",
                             "an admin-only dashboard")
+        # Arabic for Sam, then back to his browser's.
+        await owner.ok({"type": f"{HH}/set_language", "user_id": sam_id, "language": "ar"},
+                       "Sam's language")
+        await owner.refused({"type": f"{HH}/set_language", "user_id": sam_id, "language": "fr"},
+                            "language_invalid", "French")
+        await owner.refused({"type": f"{HH}/set_language", "user_id": dartec_id,
+                             "language": "ar"}, "maintenance", "Dartec's account's language")
         sam = await as_user(session, "sam", "t9xe-2bqf-hj6u")
         if sam:
             core = await sam.ok({"type": "frontend/get_user_data", "key": "core"}, "Sam core")
             check((core or {}).get("value", {}).get("default_panel") == "dartec-home",
                   f"Sam's first dashboard is {core}")
+            lang = ((await sam.ok({"type": "frontend/get_user_data", "key": "language"},
+                                  "Sam language")) or {}).get("value") or {}
+            check(lang.get("language") == "ar", f"Sam's own language data is {lang}")
+            state = await owner.ok({"type": f"{HH}/set_language", "user_id": sam_id,
+                                    "language": None}, "Sam's language cleared")
+            check(person(state, "Sam").get("language") is None,
+                  f"Sam's language after clearing: {person(state, 'Sam').get('language')!r}")
+            cleared = await sam.ok({"type": "frontend/get_user_data", "key": "language"},
+                                   "Sam language cleared")
+            check((cleared or {}).get("value") is None,
+                  f"Sam's language data after clearing is {cleared}")
             await sam.close()
         else:
             problems.append("Sam could not sign in")
@@ -295,8 +336,13 @@ async def main(owner_token: str) -> None:
         check("Live test added Layla as Family" in messages, f"logbook: {messages}")
         check("Live test paused Layla K" in messages, f"logbook: {messages}")
         check("Live test removed Sam from the household" in messages, f"logbook: {messages}")
-        check(all(e.get("context_user_id") == owner_id for e in mine),
+        check("Live test set the language Sam sees to Arabic" in messages, f"logbook: {messages}")
+        # Omar chose his own language; everything else was the owner.
+        check(all(e.get("context_user_id") == (omar_uid if (e.get("message") or "")
+                                               .startswith("Omar ") else owner_id)
+                  for e in mine),
               "logbook entries are not attributed to the person who made them")
+        check("Omar set the language Omar sees to Arabic" in messages, f"logbook: {messages}")
         check("n4km-7wqa-zd2p" not in json.dumps(book), "a password reached the logbook")
 
         for conn in (owner, layla, omar, dartec):

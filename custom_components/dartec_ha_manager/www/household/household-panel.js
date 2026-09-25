@@ -13,6 +13,10 @@
 const WS = "dartec_ha_manager/household";
 const RTL = new Set(["ar", "he", "fa", "ur"]);
 const LANGS = new Set(["en", "ar"]);
+// The languages a person can be set to (user_prefs.LANGUAGES), each shown in
+// its own name so it can be found whatever this panel is showing.
+const LANGUAGES = ["en", "ar"];
+const LANGUAGE_NAMES = { en: "English", ar: "العربية" };
 // Readable on a phone and unambiguous when read aloud: no 0/o, 1/l/i.
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 const COMMON = ["password", "123456", "12345678", "qwerty", "111111", "abc123",
@@ -357,6 +361,7 @@ class DartecHouseholdPanel extends HTMLElement {
     if (!p.is_active) chips.push(`<span class="chip warn">${esc(this.t("paused"))}</span>`);
     if (p.local_only) chips.push(`<span class="chip muted">${esc(this.t("home_only"))}</span>`);
     if (!p.has_login) chips.push(`<span class="chip muted">${esc(this.t("no_login_chip"))}</span>`);
+    if (p.language) chips.push(`<span class="chip muted" lang="${esc(p.language)}">${esc(LANGUAGE_NAMES[p.language] || p.language)}</span>`);
     const sub = p.kind === "owner" ? this.t("owner_note")
       : p.dashboard ? this.t("first_dashboard", { name: this._dashTitle(p.dashboard) }) : "";
     const interactive = p.kind === "person" || p.is_me;
@@ -391,7 +396,7 @@ class DartecHouseholdPanel extends HTMLElement {
     if (!el) return;
     const act = el.dataset.act;
     if (act === "retry") { this._error = null; this._render(); this._load(); }
-    if (act === "add") this._openSheet({ type: "add", role: "family", local_only: false, dashboard: "", password: "", username: "", name: "", userTouched: false });
+    if (act === "add") this._openSheet({ type: "add", role: "family", local_only: false, dashboard: "", language: "", password: "", username: "", name: "", userTouched: false });
     if (act === "open") this._openSheet({ type: "person", id: el.dataset.id });
   }
 
@@ -419,6 +424,7 @@ class DartecHouseholdPanel extends HTMLElement {
       edit: () => this._editHtml(s),
       password: () => this._passwordHtml(s),
       dashboard: () => this._dashboardHtml(s),
+      language: () => this._languageHtml(s),
       confirm: () => this._confirmHtml(s),
       done: () => this._doneHtml(s),
     }[s.type]();
@@ -464,6 +470,11 @@ class DartecHouseholdPanel extends HTMLElement {
       `<option value="${esc(b.url_path)}" ${selected === b.url_path ? "selected" : ""}>${esc(this._dashTitle(b.url_path))}${b.from_dartec ? ` · ${esc(this.t("form.from_dartec"))}` : ""}</option>`).join("");
   }
 
+  _languageOptions(selected) {
+    return `<option value="">${esc(this.t("form.language_default"))}</option>` + LANGUAGES.map((code) =>
+      `<option value="${code}" lang="${code}" ${selected === code ? "selected" : ""}>${esc(LANGUAGE_NAMES[code])}</option>`).join("");
+  }
+
   _passwordField(s, personal) {
     const score = strength(s.password, personal);
     return `<label class="field"><span class="label">${esc(this.t("form.password"))}</span>
@@ -489,6 +500,9 @@ class DartecHouseholdPanel extends HTMLElement {
       <label class="field"><span class="label">${esc(this.t("form.dashboard"))}</span>
         <select name="dashboard">${this._dashboardOptions(s.dashboard)}</select>
         <small>${esc(this.t("form.dashboard_note"))}</small></label>
+      <label class="field"><span class="label">${esc(this.t("form.language"))}</span>
+        <select name="language">${this._languageOptions(s.language)}</select>
+        <small>${esc(this.t("form.language_note"))}</small></label>
       ${this._errorHtml(s)}
       ${this._buttons(this.t("form.add_button"), "create")}`;
   }
@@ -515,6 +529,7 @@ class DartecHouseholdPanel extends HTMLElement {
       <div class="actions">
         ${p.kind === "person" ? btn("edit", this.t("actions.edit")) : ""}
         ${btn("dashboard", this.t("actions.dashboard"))}
+        ${btn("language", this.t("actions.language"))}
         ${p.kind === "person" ? btn("password", this.t("actions.password"), { disabled: !!pwWhy, why: pwWhy }) : ""}
         ${self ? "" : p.is_active ? btn("pause", this.t("actions.pause"), { danger: true }) : btn("resume", this.t("actions.resume"))}
         ${self ? "" : btn("remove", this.t("actions.remove"), { danger: true })}
@@ -560,6 +575,19 @@ class DartecHouseholdPanel extends HTMLElement {
       ${this._buttons(this.t("form.save"), "savedashboard")}`;
   }
 
+  _languageHtml(s) {
+    const p = this._person(s.id);
+    const choice = (value, label, lang = "") => `<label class="choice ${s.language === value ? "on" : ""}">
+      <input type="radio" name="lang" value="${esc(value)}" ${s.language === value ? "checked" : ""}>
+      <span><b ${lang ? `lang="${lang}"` : ""}>${esc(label)}</b></span></label>`;
+    return `<h3 id="sheet-title">${esc(this.t("language.title", { name: p?.name }))}</h3>
+      <p class="honest">${esc(this.t("form.language_note"))}</p>
+      <div class="choices">${choice("", this.t("form.language_default"))}
+        ${LANGUAGES.map((code) => choice(code, LANGUAGE_NAMES[code], code)).join("")}</div>
+      ${this._errorHtml(s)}
+      ${this._buttons(this.t("form.save"), "savelanguage")}`;
+  }
+
   _confirmHtml(s) {
     const p = this._person(s.id);
     const name = p?.name || "";
@@ -601,12 +629,14 @@ class DartecHouseholdPanel extends HTMLElement {
     if (el.name === "username") { s.username = el.value; s.userTouched = true; this._refreshMeter(); return; }
     if (el.name === "password") { s.password = el.value; this._refreshMeter(); return; }
     if (el.name === "dashboard") { s.dashboard = el.value; return; }
+    if (el.name === "language") { s.language = el.value; return; }
     if (el.name === "sign_out") { s.sign_out = el.checked; return; }
     if (el.name === "local_only") { s.local_only = el.checked; return; }
     if (ev.type !== "change") return;
     // Choices re-render, so the explanations and the guest note follow them.
     if (el.name === "role") { s.role = el.value; this._renderSheet(); }
     if (el.name === "board") { s.dashboard = el.value; this._renderSheet(); }
+    if (el.name === "lang") { s.language = el.value; this._renderSheet(); }
   }
 
   _refreshMeter() {
@@ -636,6 +666,7 @@ class DartecHouseholdPanel extends HTMLElement {
     if (act === "copy") { this._copy(s[el.dataset.key], el.dataset.key); return; }
     if (act === "edit") { this._openSheet({ type: "edit", id: p.id, name: p.name, role: p.role === "view_only" ? "" : p.role, local_only: p.local_only }); return; }
     if (act === "dashboard") { this._openSheet({ type: "dashboard", id: p.id, dashboard: p.dashboard || "" }); return; }
+    if (act === "language") { this._openSheet({ type: "language", id: p.id, language: p.language || "" }); return; }
     if (act === "password") { this._openSheet({ type: "password", id: p.id, password: "", sign_out: false }); return; }
     if (act === "pause" || act === "remove") { this._openSheet({ type: "confirm", what: act, id: p.id }); return; }
     if (act === "resume") {
@@ -648,6 +679,7 @@ class DartecHouseholdPanel extends HTMLElement {
       const payload = { name: s.name, username: s.username.trim().toLowerCase(), password: s.password,
         role: s.role, local_only: s.role === "guest" ? true : !!s.local_only };
       if (s.dashboard) payload.dashboard = s.dashboard;
+      if (s.language) payload.language = s.language;
       if (await this._call("create", payload)) {
         this._openSheet({ type: "done", title: "done.added_title", name: s.name.trim(), username: payload.username, password: s.password });
         this._renderMain();
@@ -668,6 +700,11 @@ class DartecHouseholdPanel extends HTMLElement {
     if (act === "askpassword") {
       if (!this._passwordOk(s, [p.username, ...String(p.name).split(/\s+/)])) return;
       this._openSheet({ type: "confirm", what: "password", id: p.id, password: s.password, sign_out: s.sign_out });
+      return;
+    }
+    if (act === "savelanguage") {
+      if (await this._call("set_language", { user_id: p.id, language: s.language || null })) this._done(this.t("toast.language"));
+      else this._renderSheet();
       return;
     }
     if (act === "savedashboard") {

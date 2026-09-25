@@ -14,6 +14,11 @@ boundary. This module applies them to Home Assistant.
 * `panel_update` points a panel at another room, or renames it; `panel_remove`
   deletes one; `panel_status` reports them. **Routine**, and only ever for a
   panel account; see `service_policy.py` for why.
+* Setup and update also take an optional `language` (`en` / `ar`) and
+  `theme` (a theme loaded on the home), written to the panel account's own
+  `language` and `theme` user data, as the profile page would
+  (`user_prefs.py`; dartec-ha-manager#49). Left out, each is left as it is;
+  `null` clears it, so the panel follows the browser or the system default.
 
 **The APIs.** The account itself goes through Home Assistant's own
 websocket commands over the loopback (`config/auth/*` and
@@ -43,6 +48,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import panels as rules
+from . import user_prefs as prefs
 from .ws_bridge import call_own_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +111,58 @@ async def _default_panel(hass: HomeAssistant, user_id: str) -> str | None:
     return await first_dashboard(hass, user_id)
 
 
+def _themes(hass: HomeAssistant) -> list[str]:
+    """The themes loaded on this home, as `frontend/get_themes` lists them."""
+    from homeassistant.components import frontend
+
+    return list(hass.data.get(getattr(frontend, "DATA_THEMES", "frontend_themes")) or {})
+
+
+def _clean_prefs(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str, str | None]:
+    """The language and theme the command asks for: only the keys it sends,
+    `None` for one it clears. Refuses before anything is changed."""
+    out: dict[str, str | None] = {}
+    try:
+        if "language" in cmd:
+            out["language"] = prefs.clean_language(cmd["language"])
+        if "theme" in cmd:
+            out["theme"] = prefs.clean_theme(cmd["theme"], _themes(hass))
+    except prefs.Invalid as err:
+        raise rules.Refused("no_theme" if err.code == "no_theme" else "invalid",
+                            err.message) from err
+    return out
+
+
+async def _write_prefs(hass: HomeAssistant, user_id: str,
+                       wanted: dict[str, str | None]) -> dict[str, str | None]:
+    """Apply `wanted` to the account's own frontend data, and return its
+    language and theme as they now are."""
+    from .household_ws import _user_store
+
+    store = await _user_store(hass, user_id)
+    if "language" in wanted:
+        await store.async_set_item(
+            "language", prefs.language_value(store.data.get("language"), wanted["language"]))
+    if "theme" in wanted:
+        await store.async_set_item(
+            "theme", prefs.theme_value(store.data.get("theme"), wanted["theme"]))
+    return {"language": prefs.language_of(store.data.get("language")),
+            "theme": prefs.theme_of(store.data.get("theme"))}
+
+
+async def _read_prefs(hass: HomeAssistant, user_id: str) -> dict[str, str | None]:
+    return await _write_prefs(hass, user_id, {})
+
+
+def _prefs_text(applied: dict[str, str | None], wanted: dict) -> str:
+    parts = []
+    if "language" in wanted:
+        parts.append(f"language {applied['language'] or 'as the browser'}")
+    if "theme" in wanted:
+        parts.append(f"theme {applied['theme'] or 'the system default'}")
+    return (", " + ", ".join(parts)) if parts else ""
+
+
 async def _write_frontend(hass: HomeAssistant, user_id: str, url_path: str,
                           panels: dict[str, dict]) -> int:
     """The room as the first dashboard, and every other entry hidden. Returns
@@ -131,8 +189,10 @@ async def panel_rows(hass: HomeAssistant, user_id: str | None = None) -> list[di
             continue
         tokens = [{"token_type": t.token_type, "last_used_at": t.last_used_at}
                   for t in user.refresh_tokens.values()]
+        own = await _read_prefs(hass, described["id"])
         rows.append(rules.status_row(described, tokens,
-                                     await _default_panel(hass, described["id"])))
+                                     await _default_panel(hass, described["id"]),
+                                     own["language"], own["theme"]))
     return sorted(rows, key=lambda r: r["username"] or "")
 
 
@@ -147,6 +207,7 @@ async def panel_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         url_path = rules.clean_url_path(cmd.get("url_path"))
         panels = _panel_settings(hass)
         rules.check_dashboard(url_path, _dashboards(hass, panels))
+        wanted = _clean_prefs(hass, cmd)
         existing = rules.plan_setup(await _users(hass), username)
     except rules.Refused as err:
         return _refused(err)
@@ -164,15 +225,17 @@ async def panel_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
                 return refused
             created = False
         hidden = await _write_frontend(hass, user_id, url_path, panels)
+        applied = await _write_prefs(hass, user_id, wanted)
     except Exception as err:  # noqa: BLE001 - by type only: never risk echoing the password
         _LOGGER.warning("panel_setup for %s failed: %s", username, type(err).__name__)
         return _fail(f"panel setup failed ({type(err).__name__})")
 
     verb = "created" if created else "updated"
     return {"ok": True, "user_id": user_id, "username": username, "created": created,
-            "url_path": url_path, "hidden_panels": hidden,
+            "url_path": url_path, "hidden_panels": hidden, **applied,
             "detail": f"{verb} panel account '{username}' ({name}), first dashboard "
-                      f"'{url_path}', {hidden} other sidebar entries hidden"}
+                      f"'{url_path}', {hidden} other sidebar entries hidden"
+                      + _prefs_text(applied, wanted)}
 
 
 async def _create(hass: HomeAssistant, name: str, username: str, password: str):
@@ -225,9 +288,9 @@ async def _refresh(hass: HomeAssistant, user_id: str, name: str, password: str):
 
 
 async def panel_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
-    """Another room, another name, or both. With neither, the panel's sidebar
-    is worked out again, which is how a dashboard added to the home after the
-    panel was set up gets hidden from it too."""
+    """Another room, another name, language or theme. With none, the panel's
+    sidebar is worked out again, which is how a dashboard added to the home
+    after the panel was set up gets hidden from it too."""
     try:
         target = rules.find_panel(await _users(hass), cmd.get("user_id"))
         if target is None:
@@ -239,6 +302,7 @@ async def panel_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             url_path = await _default_panel(hass, target["id"])
         url_path = rules.clean_url_path(url_path)
         rules.check_dashboard(url_path, _dashboards(hass, panels))
+        wanted = _clean_prefs(hass, cmd)
     except rules.Refused as err:
         return _refused(err)
 
@@ -248,9 +312,11 @@ async def panel_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         if not result.get("success"):
             return _fail(_ws_error(result, "rename"))
     hidden = await _write_frontend(hass, target["id"], url_path, panels)
-    return {"ok": True, "hidden_panels": hidden, "url_path": url_path,
+    applied = await _write_prefs(hass, target["id"], wanted)
+    return {"ok": True, "hidden_panels": hidden, "url_path": url_path, **applied,
             "detail": f"set panel account '{target.get('username')}' to dashboard "
-                      f"'{url_path}'" + (f", named {name}" if name else "")}
+                      f"'{url_path}'" + (f", named {name}" if name else "")
+                      + _prefs_text(applied, wanted)}
 
 
 async def panel_remove(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:

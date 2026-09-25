@@ -109,6 +109,12 @@ def main(base: str, out: Path) -> None:
                 panel(page).locator(".sheet [data-sact=close]").click()
 
                 panel(page).locator(".card[data-act=open]").nth(1).click()
+                panel(page).locator(".sheet [data-sact=language]").click()
+                panel(page).locator(".sheet input[name=lang][value=ar]").check()
+                shot(page, out, f"{tag}-language")
+                panel(page).locator(".sheet [data-sact=close]").click()
+
+                panel(page).locator(".card[data-act=open]").nth(1).click()
                 panel(page).locator(".sheet [data-sact=remove]").click()
                 shot(page, out, f"{tag}-remove")
                 context.close()
