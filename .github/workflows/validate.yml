@@ -16,6 +16,11 @@
 # - live-brand: the brand's old spelling staged on a home (a stored default
 #   theme under the old name, the entry title, a dashboard title) and put
 #   right - see tests/live/run_live_brand.py.
+# - live-dashboards: the test villa built from helpers, every dashboard in
+#   docs/dashboards/prototypes applied through the agent and opened in
+#   Chromium at phone, tablet, wall and NSPanel sizes in English and Arabic;
+#   fails on a missing entity or a card error, and keeps the screenshots as
+#   an artefact on every run - see tests/live/run_live_dashboards.py (#56).
 # - live-update: guarded Core/OS updates inside real Home Assistant, with a
 #   stand-in Supervisor; each update, rollback and restore really restarts
 #   Home Assistant — see tests/live/run_live_update.py. About five minutes.
@@ -138,6 +143,37 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: live-panels-${{ matrix.version }}
+          path: live-artifacts
+          if-no-files-found: ignore
+
+  live-dashboards:
+    # The dashboards the fleet is given, rendered on each Home Assistant the
+    # agent is tested on, so a release that breaks a card shows here before
+    # homes take it. About eight minutes a version. The screenshots are
+    # uploaded whether it passes or not: they are for a person to look at.
+    # No timing is taken: headless Chromium shows no cost for what a wall
+    # tablet's GPU pays for.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.8.3", "2026.9.2", "stable", "beta"]' || '["2026.8.3", "2026.9.2"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+      # Arabic has to be drawn in a real Arabic face, or every AR screenshot
+      # is boxes. Noto is also what an Android wall tablet draws it in.
+      - run: sudo apt-get install -y -q fonts-noto-core
+      - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      - run: python tests/live/run_live_dashboards.py ${{ matrix.version }} --artifacts live-artifacts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-dashboards-${{ matrix.version }}
           path: live-artifacts
           if-no-files-found: ignore
 
