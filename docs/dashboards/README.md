@@ -17,6 +17,7 @@ each recommended change is a separate GitHub issue for the owner to approve.
 | [themes.md](themes.md) | All 105 themes from the cloudapp.dev list, evaluated in one table, the shortlist and the recommendation |
 | [design-gallery.md](design-gallery.md) | How eight showcase theme repositories (Frosted Glass, visionOS, iOS, LCARS, Catppuccin, Material You, Graphite, Noctis) get their look: how much is theme, CSS, custom cards, photographs and blur; licences and risk |
 | [dartec-variants/](dartec-variants/) | **Dartec's own theme family**, drafted: Dartec (corrected), Glass, Glass Lite, Soft, Material, Graphite. Design briefs, the theme YAML, contrast, the cost of blur on a tablet, brand fonts, screenshots |
+| [real-home-test.md](real-home-test.md) | The rules run on a real, lived-in home (admin-only preview, reversible): every rule that failed, how much it touched, and what the generator should do. Patterns and counts only |
 | [maintenance.md](maintenance.md) | What each choice costs to keep working across Home Assistant updates, and which dependencies are risky for a fleet |
 | [recommendations.md](recommendations.md) | Ranked changes to the dashboards and room panels the manager and agent generate, each with benefit, effort, risk and its GitHub issue |
 | [prototypes/](prototypes/) | The exact YAML of every test dashboard (English and Arabic), and the log of every API call made on the bench, so each test can be rebuilt and undone |
