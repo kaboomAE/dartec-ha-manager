@@ -8,7 +8,8 @@ Assistant's own commands, signed in as the owner and as the panel account
 itself, that:
 
 * room dashboards made with `lovelace_create` are storage dashboards, out of
-  the sidebar and not admin-only;
+  the sidebar and not admin-only; one made with `require_admin: true` is
+  admin-only, and one with `require_admin: "false"` is refused, not made;
 * `panel_setup` is refused without the home's consent (commissioning closed,
   no window) and creates nothing; with a window the homeowner opened, it makes
   a non-admin, `local_only` account with no person, that signs in through the
