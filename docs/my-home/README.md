@@ -19,7 +19,8 @@ Only people who can manage the home see it: the owner, and anyone you add as
 2. Type their **name** and a **username** (what they type to sign in).
 3. Type a password, or tap **Make one for me**. The bar shows how strong it is.
 4. Choose **what they can do** (see below).
-5. Optionally, choose the **first dashboard they see**.
+5. Optionally, choose the **first dashboard they see**, and their **language**
+   (English or Arabic; otherwise Home Assistant follows their phone or browser).
 6. Tap **Add person**. The next screen shows their username and password once:
    give them to the person, or tap **Copy**.
 
@@ -49,6 +50,7 @@ Tap a person to see what you can do.
 
 - **Edit name and role.**
 - **Choose first dashboard** (see below).
+- **Choose language** (see below).
 - **Set a new password.** Only the owner can do this, the same rule as Home
   Assistant's own settings. You can also sign them out on all their devices,
   if the old password might be known to someone else. To change your *own*
@@ -72,6 +74,17 @@ dashboards your installer set up (marked **From Dartec**).
 **This sets what they see first; it doesn't hide anything from them.** They
 can still open every other dashboard and control every device. It is a
 convenience, not a lock.
+
+## The language someone sees
+
+You can choose whether Home Assistant shows each person its screens in
+**English** or **العربية**, or leave it to follow their phone or browser. In
+Arabic the whole of Home Assistant turns right to left. You can choose your own
+language here too. It is the same setting as the one on each person's profile,
+so they can still change it themselves, and it changes how the screens look,
+nothing else.
+
+<img src="img/en-phone-language.png" width="280" alt="Choosing someone's language">
 
 ## What My Home won't do
 
@@ -107,6 +120,8 @@ guests:
 - It opens on its room's page, and the other pages are hidden from its menu.
   The installer also sets **Always hide the sidebar** on the panel itself: that
   is a setting of the screen's browser, not of the account.
+- Your installer can set its language (English or Arabic) and its theme, so an
+  Arabic household's panels are in Arabic from the start.
 - It can only sign in at home, on your Wi-Fi, and it can't change settings or
   manage people.
 - **This keeps the screen on its room. It is not a lock.** Home Assistant has
@@ -140,7 +155,8 @@ Home Assistant على هاتفك. استخدمها لإضافة أفراد عا�
 2. اكتب **الاسم** و**اسم المستخدم** (ما يكتبه للدخول).
 3. اكتب كلمة مرور، أو اضغط **أنشئ لي واحدة**. يُظهر الشريط مدى قوتها.
 4. اختر **ماذا يستطيع أن يفعل** (انظر أدناه).
-5. اختياريًا، اختر **أول لوحة يراها**.
+5. اختياريًا، اختر **أول لوحة يراها** و**اللغة** (الإنجليزية أو العربية، وإلا
+   فيتبع Home Assistant لغة هاتفه أو متصفحه).
 6. اضغط **إضافة الشخص**. تظهر الشاشة التالية اسم المستخدم وكلمة المرور مرة
    واحدة: أعطهما للشخص، أو اضغط **نسخ**.
 
@@ -167,6 +183,7 @@ Home Assistant على هاتفك. استخدمها لإضافة أفراد عا�
 
 - **تعديل الاسم والدور.**
 - **اختيار أول لوحة.**
+- **اختيار اللغة.**
 - **تعيين كلمة مرور جديدة.** المالك وحده يستطيع ذلك، وهي القاعدة نفسها في
   إعدادات Home Assistant. لتغيير كلمة مرورك أنت، افتح ملفك الشخصي.
 - **إيقاف الدخول مؤقتًا.** يُخرَج من كل أجهزته ولا يستطيع الدخول حتى
@@ -181,6 +198,16 @@ Home Assistant على هاتفك. استخدمها لإضافة أفراد عا�
 
 **هذا يحدّد ما يراه أولًا، ولا يُخفي عنه شيئًا.** يستطيع فتح كل اللوحات الأخرى
 والتحكم بكل الأجهزة. إنها وسيلة راحة وليست قفلًا.
+
+## اللغة التي يراها الشخص
+
+يمكنك أن تختار أن يعرض Home Assistant شاشاته لكل شخص **بالإنجليزية** أو
+**بالعربية**، أو أن تتركه يتبع لغة هاتفه أو متصفحه. وبالعربية ينقلب
+Home Assistant كله من اليمين إلى اليسار. ويمكنك اختيار لغتك أنت هنا أيضًا. إنه
+الإعداد نفسه الموجود في الملف الشخصي لكل شخص، فيستطيع تغييره بنفسه، ولا يغيّر
+إلا شكل الشاشات.
+
+<img src="img/ar-phone-language.png" width="280" alt="اختيار لغة شخص">
 
 ## ما لا تفعله "بيتي"
 
@@ -204,6 +231,8 @@ Dartec: نرى فقط عدد الأشخاص في كل دور، ولا نرى أ�
 - يفتح على صفحة غرفته، والصفحات الأخرى مخفية من قائمته. ويضبط المركّب أيضًا
   **إخفاء الشريط الجانبي دائمًا** على الشاشة نفسها: هذا إعداد في متصفح
   الشاشة، وليس في الحساب.
+- يستطيع المركّب ضبط لغتها (الإنجليزية أو العربية) ومظهرها، فتكون شاشات المنزل
+  الذي يتحدث العربية بالعربية منذ البداية.
 - لا يدخل إلا من المنزل عبر شبكة Wi-Fi المنزلية، ولا يغيّر الإعدادات ولا يدير
   الأفراد.
 - **هذا يُبقي الشاشة على غرفتها، وليس قفلًا.** لا يستطيع Home Assistant حصر

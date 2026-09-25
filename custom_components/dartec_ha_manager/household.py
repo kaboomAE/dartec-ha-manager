@@ -55,8 +55,10 @@ import re
 from typing import Any, Iterable
 
 try:
+    from . import user_prefs
     from .panels import PANEL_USERNAME_PREFIX, is_panel_account
 except ImportError:  # imported on its own, by the unit tests
+    import user_prefs
     from panels import PANEL_USERNAME_PREFIX, is_panel_account
 
 GROUP_ADMIN = "system-admin"
@@ -304,7 +306,8 @@ def check_create(actor: dict, users: list[dict], payload: dict) -> dict:
     # means here, so it is not left to a checkbox.
     local_only = True if new_role == ROLE_GUEST else bool(payload.get("local_only"))
     return {"name": name, "username": username, "password": password,
-            "role": new_role, "local_only": local_only}
+            "role": new_role, "local_only": local_only,
+            "language": clean_language(payload.get("language"))}
 
 
 def check_update(actor: dict, users: list[dict], user_id: str, changes: dict,
@@ -414,6 +417,31 @@ def check_dashboard(actor: dict, users: list[dict], user_id: str, url_path: Any,
     return target, clean_dashboard(url_path, allowed)
 
 
+def clean_language(language: Any) -> str | None:
+    """English, Arabic, or None for "follow their phone or browser"."""
+    try:
+        return user_prefs.clean_language(language)
+    except user_prefs.Invalid as err:
+        raise Refused("language_invalid", "Choose English or Arabic.") from err
+
+
+def check_language(actor: dict, users: list[dict], user_id: str,
+                   language: Any) -> tuple[dict, str | None]:
+    """Choosing the language Home Assistant shows someone in. The same rule
+    as the first dashboard: your own is allowed (it is the setting on your
+    profile page), anyone else's only if they are a person here. Like the
+    first dashboard, it changes how the screens look and nothing they can do.
+    """
+    check_actor(actor)
+    target = _find(users, user_id)
+    if target.get("id") != actor.get("id"):
+        _changeable(target)
+    return target, clean_language(language)
+
+
+LANGUAGE_NAMES = {"en": "English", "ar": "Arabic"}
+
+
 def _keep_an_admin(users: list[dict], before: dict, after: dict | None) -> None:
     """Refuse a change that would leave no active person who can manage the
     home. `after` is the account as it would be, or None when it is removed."""
@@ -447,6 +475,11 @@ def summary(action: str, actor_name: str, target_name: str,
         if title:
             return f"{who} set the first dashboard {whom} sees to '{title}'"
         return f"{who} set the first dashboard {whom} sees back to the home's usual one"
+    if action == "language":
+        name = LANGUAGE_NAMES.get(detail.get("language"))
+        if name:
+            return f"{who} set the language {whom} sees to {name}"
+        return f"{who} set the language {whom} sees back to their phone's or browser's"
     parts = []
     if "name" in detail:
         parts.append(f"renamed {detail.get('old_name') or whom} to {detail['name']}")

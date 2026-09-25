@@ -39,6 +39,8 @@ USERNAME = "panel-test"
 # generates. The run fails if either turns up anywhere it should not.
 PASSWORD_1 = "kq7m-wd3p-zr9h-x2fa"
 PASSWORD_2 = "tb4n-8vce-hm2j-q6ys"
+# Loaded by run_live_panels.py's configuration (#49).
+THEME = "Dartec Glass Lite"
 ROOM_CONFIG = {"title": "Test room", "views": [{"title": "Test room", "path": "room",
                                                  "cards": [{"type": "markdown",
                                                             "content": "Room panel"}]}]}
@@ -250,17 +252,23 @@ async def main(owner_token: str) -> None:
         refused(await agent({**setup, "username": "kitchen"}), "invalid", "a username without the prefix")
         refused(await agent({**setup, "username": "panel-admin"}), "username_taken",
                 "an administrator's username")
+        refused(await agent({**setup, "language": "fr"}), "invalid", "a language not set up")
+        refused(await agent({**setup, "theme": "DarTec"}), "no_theme",
+                "a theme the home does not have")
+        check(USERNAME not in await users(owner), "a refused setup created the account")
         check(await login(session, "panel-admin", "adm1n-live-pw-8k") is not None,
               "the administrator's login stopped working after a refused setup")
 
         # ── Set up ──
         before_login = datetime.now(timezone.utc)
-        first = await agent(setup)
+        first = await agent({**setup, "language": "ar", "theme": THEME})
         evidence["setup"] = first
         no_secret(first, "the setup answer")
         check(first.get("ok") is True and first.get("created") is True
               and first.get("username") == USERNAME and first.get("url_path") == ROOM
               and isinstance(first.get("hidden_panels"), int), f"setup: {first}")
+        check(first.get("language") == "ar" and first.get("theme") == THEME,
+              f"setup applied language {first.get('language')!r}, theme {first.get('theme')!r}")
         panel_id = first.get("user_id")
         account = (await users(owner)).get(USERNAME) or {}
         evidence["account"] = account
@@ -282,6 +290,18 @@ async def main(owner_token: str) -> None:
                   f"the panel signs in as {me}")
             core = await user_data(panel, "core")
             check(core.get("default_panel") == ROOM, f"its own core data is {core}")
+            # Its own language and theme, as its profile page would have
+            # written them: this is what makes the tablet Arabic and right to
+            # left whatever the browser says (#49).
+            lang = await user_data(panel, "language")
+            evidence["panel_language"] = lang
+            check(lang.get("language") == "ar" and lang.get("number_format") == "language"
+                  and lang.get("time_zone") == "local", f"its own language data is {lang}")
+            theme = await user_data(panel, "theme")
+            check(theme == {"theme": THEME}, f"its own theme data is {theme}")
+            themes = await panel.ok({"type": "frontend/get_themes"}, "themes as the panel") or {}
+            check(THEME in (themes.get("themes") or {}),
+                  f"the panel is not sent its theme: {sorted(themes.get('themes') or {})}")
             sidebar = await user_data(panel, "sidebar")
             evidence["sidebar"] = sidebar
             seen = await panel.ok({"type": "get_panels"}, "panel's panels") or {}
@@ -323,6 +343,8 @@ async def main(owner_token: str) -> None:
             problems.append(f"last_used_at is {used!r}")
         check(row.get("default_panel") == ROOM and row.get("local_only") is True,
               f"status row {row}")
+        check(row.get("language") == "ar" and row.get("theme") == THEME,
+              f"status row language/theme: {row}")
         check("ip" not in json.dumps(status).casefold().replace("hidden", ""),
               "panel_status carries an address")
         one = await agent({"action": "panel_status", "user_id": admin_id})
@@ -338,6 +360,8 @@ async def main(owner_token: str) -> None:
         account = (await users(owner)).get(USERNAME) or {}
         check(account.get("local_only") is True and account.get("name") == "Test panel",
               f"after setup again the account is {account}")
+        check(again.get("language") == "ar" and again.get("theme") == THEME,
+              f"setup again without language or theme changed them: {again}")
         check(await login(session, USERNAME, PASSWORD_1) is None, "the old password still works")
         check(await login(session, USERNAME, PASSWORD_2) is not None,
               "the new password does not work")
@@ -346,6 +370,14 @@ async def main(owner_token: str) -> None:
         updated = await agent({"action": "panel_update", "user_id": panel_id, "url_path": OTHER})
         check(updated.get("ok") is True and isinstance(updated.get("hidden_panels"), int),
               f"panel_update: {updated}")
+        check(updated.get("language") == "ar" and updated.get("theme") == THEME,
+              f"panel_update without language or theme changed them: {updated}")
+        prefs = await agent({"action": "panel_update", "user_id": panel_id,
+                             "language": "en", "theme": None})
+        check(prefs.get("ok") is True and prefs.get("language") == "en"
+              and prefs.get("theme") is None, f"panel_update language/theme: {prefs}")
+        refused(await agent({"action": "panel_update", "user_id": panel_id, "theme": "Nope"}),
+                "no_theme", "update to a theme the home does not have")
         refused(await agent({"action": "panel_update", "user_id": panel_id,
                              "url_path": "staff-only"}), "no_dashboard", "update to admin-only")
         refused(await agent({"action": "panel_update", "user_id": admin_id, "url_path": OTHER}),
@@ -357,6 +389,11 @@ async def main(owner_token: str) -> None:
             hidden = set((await user_data(panel, "sidebar")).get("hiddenPanels") or [])
             check(ROOM in hidden and OTHER not in hidden,
                   f"after the update hiddenPanels is {sorted(hidden)}")
+            lang = await user_data(panel, "language")
+            check(lang.get("language") == "en", f"after the update its language data is {lang}")
+            got = await panel.ok({"type": "frontend/get_user_data", "key": "theme"}, "theme")
+            check((got or {}).get("value") is None,
+                  f"after clearing, its theme data is {got}")
             await panel.close()
         else:
             problems.append("the panel could not sign in after the update")
@@ -367,7 +404,9 @@ async def main(owner_token: str) -> None:
         rows = {r.get("username"): r for r in snap.get("panels") or []}
         evidence["snapshot_panels"] = snap.get("panels")
         check(rows.get(USERNAME, {}).get("default_panel") == OTHER
-              and rows.get(USERNAME, {}).get("signed_in") is True,
+              and rows.get(USERNAME, {}).get("signed_in") is True
+              and rows.get(USERNAME, {}).get("language") == "en"
+              and rows.get(USERNAME, {}).get("theme") is None,
               f"snapshot panels: {snap.get('panels')}")
         check((snap.get("core") or {}).get("language") == "en",
               f"snapshot core.language is {(snap.get('core') or {}).get('language')!r}")
