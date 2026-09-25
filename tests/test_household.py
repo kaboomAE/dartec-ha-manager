@@ -252,7 +252,16 @@ class TestAddingAPerson:
         assert h.check_create(OWNER, HOME, self.base(name="  Ahmed   Ali ",
                                                     username=" Ahmed.Ali ")) == {
             "name": "Ahmed Ali", "username": "ahmed.ali", "password": GOOD,
-            "role": "family", "local_only": False}
+            "role": "family", "local_only": False, "language": None}
+
+    @pytest.mark.parametrize("language,expected", [("ar", "ar"), ("en", "en"), (None, None),
+                                                   ("", None)])
+    def test_a_language_may_be_chosen(self, language, expected):
+        assert h.check_create(OWNER, HOME, self.base(language=language))["language"] == expected
+
+    @pytest.mark.parametrize("language", ["fr", "arabic", 1])
+    def test_only_english_or_arabic(self, language):
+        refused("language_invalid", h.check_create, OWNER, HOME, self.base(language=language))
 
     def test_a_guest_is_always_local_only(self):
         assert h.check_create(OWNER, HOME, self.base(role="guest", local_only=False))[
@@ -326,6 +335,42 @@ class TestDashboards:
                 "../x", ["../x"])
         assert h.check_dashboard(OWNER, HOME, FAMILY["id"], "dartec-home",
                                  ["dartec-home"])[1] == "dartec-home"
+
+
+class TestLanguage:
+    """The same rule as the first dashboard: how the screens look, set for a
+    person here or for yourself, never for an account that is not ours."""
+
+    @pytest.mark.parametrize("language", ["ar", "en", None])
+    def test_for_a_person(self, language):
+        target, value = h.check_language(OWNER, HOME, FAMILY["id"], language)
+        assert target["id"] == FAMILY["id"] and value == language
+
+    def test_for_yourself(self):
+        target, value = h.check_language(ADMIN, HOME, ADMIN["id"], "ar")
+        assert target["id"] == ADMIN["id"] and value == "ar"
+
+    def test_the_owner_may_choose_their_own(self):
+        assert h.check_language(OWNER, HOME, OWNER["id"], "ar")[1] == "ar"
+
+    def test_not_for_the_owner_by_someone_else(self):
+        refused("owner", h.check_language, ADMIN, HOME, OWNER["id"], "ar")
+
+    def test_not_for_dartec_or_a_panel(self):
+        refused("maintenance", h.check_language, OWNER, HOME, DARTEC["id"], "ar")
+        panel = user("u-panel", "Kitchen panel", username="panel-kitchen", local_only=True)
+        refused("panel", h.check_language, OWNER, [*HOME, panel], "u-panel", "ar")
+
+    def test_not_by_dartec_or_a_regular_user(self):
+        refused("actor_maintenance", h.check_language, DARTEC, HOME, FAMILY["id"], "ar")
+        refused("actor_not_admin", h.check_language, FAMILY, HOME, FAMILY["id"], "ar")
+
+    def test_only_english_or_arabic(self):
+        refused("language_invalid", h.check_language, OWNER, HOME, FAMILY["id"], "fr")
+
+    def test_the_logbook_line(self):
+        assert h.summary("language", "Maryam", "Sam", {"language": "ar"})             == "Maryam set the language Sam sees to Arabic"
+        assert h.summary("language", "Maryam", "Sam", {"language": None})             == "Maryam set the language Sam sees back to their phone's or browser's"
 
 
 class TestTheLogbookLine:

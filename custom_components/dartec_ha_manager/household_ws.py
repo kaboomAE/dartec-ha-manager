@@ -46,6 +46,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from . import household as rules
+from . import user_prefs
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ async def async_setup(hass: HomeAssistant) -> None:
 
     if not store.get(_WS_REGISTERED):
         for command in (ws_list, ws_create, ws_update, ws_set_password, ws_remove,
-                        ws_set_dashboard):
+                        ws_set_dashboard, ws_set_language):
             websocket_api.async_register_command(hass, command)
         store[_WS_REGISTERED] = True
 
@@ -264,6 +265,22 @@ async def set_first_dashboard(hass: HomeAssistant, user_id: str,
     await store.async_set_item("core", core)
 
 
+async def person_language(hass: HomeAssistant, user_id: str) -> str | None:
+    """The language Home Assistant shows someone in, from their own frontend
+    settings (`user_prefs.py`), or None when it follows their browser."""
+    store = await _user_store(hass, user_id)
+    return user_prefs.language_of(store.data.get("language"))
+
+
+async def set_language(hass: HomeAssistant, user_id: str, language: str | None) -> None:
+    """Write someone's language as their profile page would, keeping the
+    number, time and date formats they chose. Their open sessions switch
+    straight away (async_set_item tells them), right to left for Arabic."""
+    store = await _user_store(hass, user_id)
+    await store.async_set_item(
+        "language", user_prefs.language_value(store.data.get("language"), language))
+
+
 def household_counts(hass: HomeAssistant, users: list[dict]) -> dict[str, int]:
     """For the snapshot: numbers only."""
     data = _data(hass)
@@ -340,6 +357,7 @@ async def _answer(hass: HomeAssistant, connection, msg: dict, data: HouseholdSto
             "is_me": person["id"] == actor["id"],
             "has_login": bool(person["username"]),
             "dashboard": await first_dashboard(hass, person["id"]),
+            "language": await person_language(hass, person["id"]),
             "linked_person": bool(_persons_of(hass, person["id"])),
         })
     connection.send_result(msg["id"], {
@@ -377,6 +395,7 @@ async def ws_list(hass: HomeAssistant, connection, msg: dict) -> None:
     vol.Required("role"): str,
     vol.Optional("local_only", default=False): bool,
     vol.Optional("dashboard"): vol.Any(None, str),
+    vol.Optional("language"): vol.Any(None, str),
 })
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -427,10 +446,12 @@ async def ws_create(hass: HomeAssistant, connection, msg: dict) -> None:
     linked = await _link_person(hass, user.id, clean["name"])
     if first:
         await set_first_dashboard(hass, user.id, first)
+    if clean["language"]:
+        await set_language(hass, user.id, clean["language"])
     await _record(hass, connection, msg, data, actor, "create",
                   {"name": clean["name"]},
                   {"role": clean["role"], "local_only": clean["local_only"],
-                   "person_linked": linked})
+                   "person_linked": linked, "language": clean["language"]})
     await _answer(hass, connection, msg, data)
 
 
@@ -607,4 +628,33 @@ async def ws_set_dashboard(hass: HomeAssistant, connection, msg: dict) -> None:
     title = next((d["title"] or d["url_path"] for d in boards if d["url_path"] == url_path), None)
     await _record(hass, connection, msg, data, actor, "dashboard", target,
                   {"url_path": url_path, "title": title})
+    await _answer(hass, connection, msg, data)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/household/set_language",
+    vol.Required("user_id"): str,
+    vol.Required("language"): vol.Any(None, str),
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_set_language(hass: HomeAssistant, connection, msg: dict) -> None:
+    """The language Home Assistant shows someone in: English, Arabic, or
+    their phone's or browser's (dartec-ha-manager#49). Like the first
+    dashboard, a convenience and not a security boundary: the person can
+    change it on their own profile."""
+    data = _gate(hass, connection, msg)
+    if data is None:
+        return
+    actor = user_dict(connection.user)
+    users = await _users(hass)
+    try:
+        target, language = rules.check_language(actor, users, msg["user_id"],
+                                                 msg["language"])
+    except rules.Refused as err:
+        _refused(connection, msg, err)
+        return
+    await set_language(hass, target["id"], language)
+    await _record(hass, connection, msg, data, actor, "language", target,
+                  {"language": language})
     await _answer(hass, connection, msg, data)

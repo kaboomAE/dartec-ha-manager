@@ -205,8 +205,12 @@ def _iso(value: Any) -> str | None:
     return str(value) if value else None
 
 
-def status_row(user: dict, tokens: Iterable[dict], default_panel: str | None) -> dict:
+def status_row(user: dict, tokens: Iterable[dict], default_panel: str | None,
+               language: str | None = None, theme: str | None = None) -> dict:
     """What `panel_status` and the snapshot report for one panel account.
+
+    `language` and `theme` are the account's own (`user_prefs.py`), None
+    when it follows the browser or the system default.
 
     `tokens` are its refresh tokens as `{"token_type", "last_used_at"}`. Only
     sign-ins count: a `normal` token is what a login makes, and it records
@@ -217,7 +221,7 @@ def status_row(user: dict, tokens: Iterable[dict], default_panel: str | None) ->
     return {"user_id": user.get("id"), "username": user.get("username"),
             "name": user.get("name"), "is_active": bool(user.get("is_active", True)),
             "local_only": bool(user.get("local_only")), "default_panel": default_panel,
-            "signed_in": bool(signins), "last_used_at": _iso(max(used)) if used else None}
+            "language": language, "theme": theme, "signed_in": bool(signins), "last_used_at": _iso(max(used)) if used else None}
 
 
 def scrub(text: Any, secret: Any) -> str:
