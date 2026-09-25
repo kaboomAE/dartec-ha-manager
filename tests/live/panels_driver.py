@@ -191,14 +191,25 @@ async def main(owner_token: str) -> None:
                                 "title": title, "icon": "mdi:sofa",
                                 "show_in_sidebar": False, "config": ROOM_CONFIG})
             check(made.get("ok") is True, f"lovelace_create {url_path}: {made}")
-        await owner.ok({"type": "lovelace/dashboards/create", "url_path": "staff-only",
-                        "title": "Staff", "mode": "storage", "require_admin": True,
-                        "show_in_sidebar": True}, "admin-only dashboard")
+        # The admin-only one through the agent too, as the manager makes a
+        # preview (dartec-ha-manager#65); a malformed flag creates nothing.
+        made = await agent({"action": "lovelace_create", "url_path": "staff-only",
+                            "title": "Staff", "require_admin": True, "show_in_sidebar": True,
+                            "config": ROOM_CONFIG})
+        check(made.get("ok") is True and made.get("require_admin") is True,
+              f"lovelace_create require_admin: {made}")
+        bad = await agent({"action": "lovelace_create", "url_path": "staff-typo",
+                           "title": "Typo", "require_admin": "false"})
+        check(bad.get("ok") is False, f"lovelace_create with require_admin 'false': {bad}")
         listed = {d["url_path"]: d for d in await owner.ok(
             {"type": "lovelace/dashboards/list"}, "dashboards") or []}
         check(listed.get(ROOM, {}).get("show_in_sidebar") is False
               and listed.get(ROOM, {}).get("require_admin") is False,
               f"the room dashboard is {listed.get(ROOM)}")
+        check(listed.get("staff-only", {}).get("require_admin") is True
+              and listed.get("staff-only", {}).get("show_in_sidebar") is True,
+              f"the admin-only dashboard is {listed.get('staff-only')}")
+        check("staff-typo" not in listed, "a refused lovelace_create still made a dashboard")
 
         # An administrator whose username happens to start with panel-.
         made = await owner.ok({"type": "config/auth/create", "name": "Panel tester",
