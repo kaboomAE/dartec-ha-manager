@@ -11,11 +11,10 @@ is defensive and failures come back as {"ok": False, "detail": ...}.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
-
-from .ws_bridge import call_own_ws
+if TYPE_CHECKING:                       # keeps create_message importable without
+    from homeassistant.core import HomeAssistant   # HA, so CI can test it
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,29 +59,56 @@ async def lovelace_save(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return {"ok": True, "detail": f"saved dashboard '{cmd.get('url_path') or '(default)'}'"}
 
 
-async def lovelace_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
-    url_path = (cmd.get("url_path") or "").strip()
+def create_message(cmd: dict[str, Any]) -> dict[str, Any] | str:
+    """The `lovelace/dashboards/create` message for a `lovelace_create`
+    command, or the reason it is refused.
+
+    `show_in_sidebar` and `require_admin` are optional and default to what
+    this command has always done: shown in the sidebar, open to everyone.
+    `require_admin: true` is how the manager makes an admin-only preview of
+    a dashboard before the family sees it (dartec-ha-manager#65). Both must
+    be real booleans when given: a string "false" is truthy, and guessing
+    which way it was meant would publish, or hide, a dashboard by accident.
+    """
+    url_path = str(cmd.get("url_path") or "").strip()
     if "-" not in url_path:
-        return {"ok": False, "detail": "url_path must contain a hyphen (HA requirement)"}
+        return "url_path must contain a hyphen (HA requirement)"
+    flags = {}
+    for key, default in (("show_in_sidebar", True), ("require_admin", False)):
+        value = cmd.get(key, default)
+        if value is None:
+            value = default
+        if not isinstance(value, bool):
+            return f"{key} must be true or false"
+        flags[key] = value
+    return {"type": "lovelace/dashboards/create", "url_path": url_path,
+            "title": cmd.get("title") or url_path,
+            "icon": cmd.get("icon") or "mdi:view-dashboard", **flags}
+
+
+async def lovelace_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
+    from .ws_bridge import call_own_ws
+
+    message = create_message(cmd)
+    if isinstance(message, str):
+        return {"ok": False, "detail": message}
+    url_path = message["url_path"]
     if url_path in (getattr(_lovelace_data(hass), "dashboards", None) or {}):
         return {"ok": False, "detail": f"dashboard '{url_path}' already exists"}
 
     # The live DashboardsCollection is a local variable inside lovelace's setup
     # and unreachable in-process; creating through a parallel collection would
     # desync it. Use HA's own websocket command instead.
-    result_msg = await call_own_ws(hass, {
-        "type": "lovelace/dashboards/create",
-        "url_path": url_path,
-        "title": cmd.get("title") or url_path,
-        "icon": cmd.get("icon") or "mdi:view-dashboard",
-        "show_in_sidebar": cmd.get("show_in_sidebar", True),
-        "require_admin": False,
-    })
+    result_msg = await call_own_ws(hass, message)
     if not result_msg.get("success"):
         error = result_msg.get("error") or {}
         return {"ok": False, "detail": f"create failed: {error.get('message', error)}"}
 
-    result: dict[str, Any] = {"ok": True, "detail": f"created dashboard '{url_path}'"}
+    result: dict[str, Any] = {"ok": True, "require_admin": message["require_admin"],
+                              "show_in_sidebar": message["show_in_sidebar"],
+                              "detail": f"created dashboard '{url_path}'"
+                                        + (" (administrators only)"
+                                           if message["require_admin"] else "")}
     if isinstance(cmd.get("config"), dict):
         try:
             dashboard = _get_dashboard(hass, url_path)
@@ -102,6 +128,8 @@ async def lovelace_update(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     Home Assistant's own websocket commands, like create, because the live
     dashboards collection is not reachable in-process.
     """
+    from .ws_bridge import call_own_ws
+
     url_path = (cmd.get("url_path") or "").strip()
     title = str(cmd.get("title") or "").strip()[:100]
     if not url_path or not title:
