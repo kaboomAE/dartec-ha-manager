@@ -25,6 +25,11 @@ itself, that:
   about addresses; `panel_update` moves it to another room; `panel_remove`
   deletes it, refuses anyone who is not a panel, and says "already gone" the
   second time;
+* `language` and `theme` land in the panel account's **own** `language` and
+  `theme` user data (the locale shape that turns it right to left; the
+  profile page's `{"theme": name}`), are left alone when not sent, clear with
+  `null`, and an unknown language or a theme the home does not have is
+  refused before anything is created (#49);
 * the snapshot carries `panels` and `core.language`, and `household` does not
   count the panel; My Home neither lists it nor lets it be changed, offers no
   room dashboard, and refuses a new person a `panel-` username;
@@ -59,11 +64,28 @@ from run_live import (  # noqa: E402
 PASSWORD_1 = "kq7m-wd3p-zr9h-x2fa"
 PASSWORD_2 = "tb4n-8vce-hm2j-q6ys"
 
+# One real theme, so `theme` is checked against what Home Assistant loaded
+# rather than only against its built-in `default`. Same name as panels_driver.
+THEME = "Dartec Glass Lite"
+THEME_YAML = f"""\
+{THEME}:
+  primary-color: "#1a6b6b"
+  ha-card-backdrop-filter: none
+"""
+
+
+def add_theme(config: Path) -> None:
+    (config / "themes").mkdir()
+    (config / "themes" / "dartec.yaml").write_text(THEME_YAML, encoding="utf-8")
+    with (config / "configuration.yaml").open("a", encoding="utf-8") as handle:
+        handle.write("frontend:\n  themes: !include_dir_merge_named themes\n")
+
 
 def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float) -> list[str]:
     name = f"dartec-panels-{version.replace('.', '-')}"
     with tempfile.TemporaryDirectory(prefix="dartec-panels-") as tmp:
         config = prepare_config(Path(tmp))
+        add_theme(config)
         log(f"{version}: starting {IMAGE}:{version} as {name}")
         port = start_container(name, version, config)
     docker("cp", str(HERE / "panels_driver.py"), f"{name}:/panels_driver.py")
