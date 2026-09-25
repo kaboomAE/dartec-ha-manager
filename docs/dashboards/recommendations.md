@@ -18,6 +18,7 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 | R12 | [Upstream: translate HA's states into Arabic and report the “C° 22.0” bug](#r12) | High for every Arabic-speaking HA user, at almost no cost | S–M | None | [#55](https://github.com/kaboomAE/dartec-ha-manager/issues/55) |
 | R13 | [Render the generated dashboards in CI on every HA version, at panel sizes, in English and Arabic](#r13) | Medium: catches breakage before the fleet takes a release | M | None (CI only) | [#56](https://github.com/kaboomAE/dartec-ha-manager/issues/56) |
 | R14 | [Dashboards for domestic staff, chosen per person in My Home](#r14) | Medium | M | Medium: families may read it as access control; the wording must be clear | [#57](https://github.com/kaboomAE/dartec-ha-manager/issues/57) |
+| R15 | [Serve Dartec's brand fonts from the agent: Lateef for Arabic, Dubai for Latin, Plex Mono](#r15) | Medium: the brand's typography in every home, and correctly sized Arabic | S–M | Low–medium: an unsupported HA variable (`--ha-font-family-body`) to re-check each release; Dubai's licence | [#59](https://github.com/kaboomAE/dartec-ha-manager/issues/59) |
 
 ## R1
 
@@ -173,9 +174,21 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 - **Benefit:** Medium. **Effort:** M. **Risk:** Medium: families may read it as access control; the wording must be clear.
 - **Issue:** [#57](https://github.com/kaboomAE/dartec-ha-manager/issues/57)
 
+## R15
+
+**Serve Dartec's brand fonts from the agent: Lateef for Arabic, Dubai for Latin, Plex Mono**
+
+- **Where:** Agent (this repo): the static path it already serves (brand SVGs) and the module it already loads into every page (`www/dashboard-fix.js` via `add_extra_js_url`)
+- **Problem:** A theme can name a font but cannot load one, so the Dartec theme's font has never rendered in any home. The brand's faces are Dubai (Latin) and Lateef (Arabic); on the bench, with the storefront's own `@font-face` rules (Lateef restricted to Arabic by `unicode-range` and set at `size-adjust: 150%`, Dubai at 113%), both rendered correctly in every Home Assistant component, right to left included.
+- **Change:** Ship the brand's web font files (278 KB for all seven) with the agent, serve them from its static path, and add the `@font-face` rules to the page from the module it already loads, so the Dartec themes' `ha-font-family-*` variables resolve on every page. Lateef and IBM Plex Mono are OFL (include the licence text). **Dubai is under its own licence and the agent's repository is public: confirm redistribution is allowed first**, or serve Dubai from the manager, or keep a system Latin font in HA.
+- **Evidence:** [dartec-variants/README.md#fonts](dartec-variants/README.md#fonts)
+- **Benefit:** Medium: the brand's typography in every home, and correctly sized Arabic. **Effort:** S–M. **Risk:** Low–medium: an unsupported HA variable (`--ha-font-family-body`) to re-check each release; Dubai's licence.
+- **Issue:** [#59](https://github.com/kaboomAE/dartec-ha-manager/issues/59)
+
 ## What is deliberately not recommended
 
 - **Custom card frameworks** (Mushroom, Bubble Card, button-card) and **card-mod**: built-in cards now cover every room control, and these run third-party JavaScript in the homeowner's browser. See [maintenance.md](maintenance.md).
 - **HACS kiosk-mode** for panels: the panels work without it, and it is more code to keep working.
 - **A different third-party theme as the fleet default**: the Dartec theme already passes; fix it (R10).
-- **Lateef as the dashboard's Arabic font**: too small at interface sizes (see [arabic-rtl.md](arabic-rtl.md#fonts)).
+- **Lateef without the storefront's sizing**: unadjusted it is too small at interface sizes; with `size-adjust: 150%` it is right (see [arabic-rtl.md](arabic-rtl.md#fonts) and R15).
+- **Third-party showcase looks as-is** (Frosted Glass, visionOS, iOS, LCARS): see [design-gallery.md](design-gallery.md); Dartec's own variants are in [dartec-variants/](dartec-variants/).

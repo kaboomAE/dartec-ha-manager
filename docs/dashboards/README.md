@@ -15,6 +15,8 @@ each recommended change is a separate GitHub issue for the owner to approve.
 | [panels.md](panels.md) | Wall panels: Android tablets and the Sonoff NSPanel Pro, kiosk set-up, screen and brightness, touch targets, what a bedroom panel should show, and how a panel maps to a room |
 | [arabic-rtl.md](arabic-rtl.md) | Everything found about Arabic and right-to-left, including fonts (Lateef and Dubai) |
 | [themes.md](themes.md) | All 105 themes from the cloudapp.dev list, evaluated in one table, the shortlist and the recommendation |
+| [design-gallery.md](design-gallery.md) | How eight showcase theme repositories (Frosted Glass, visionOS, iOS, LCARS, Catppuccin, Material You, Graphite, Noctis) get their look: how much is theme, CSS, custom cards, photographs and blur; licences and risk |
+| [dartec-variants/](dartec-variants/) | **Dartec's own theme family**, drafted: Dartec (corrected), Glass, Glass Lite, Soft, Material, Graphite. Design briefs, the theme YAML, contrast, the cost of blur on a tablet, brand fonts, screenshots |
 | [maintenance.md](maintenance.md) | What each choice costs to keep working across Home Assistant updates, and which dependencies are risky for a fleet |
 | [recommendations.md](recommendations.md) | Ranked changes to the dashboards and room panels the manager and agent generate, each with benefit, effort, risk and its GitHub issue |
 | [prototypes/](prototypes/) | The exact YAML of every test dashboard (English and Arabic), and the log of every API call made on the bench, so each test can be rebuilt and undone |
