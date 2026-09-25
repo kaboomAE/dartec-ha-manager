@@ -165,6 +165,7 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 - **Evidence:** [maintenance.md#a-per-release-routine-15-minutes-on-the-bench](maintenance.md#a-per-release-routine-15-minutes-on-the-bench)
 - **Benefit:** Medium: catches breakage before the fleet takes a release. **Effort:** M. **Risk:** None (CI only).
 - **Issue:** [#56](https://github.com/kaboomAE/dartec-ha-manager/issues/56)
+- **Status (2026-09-26):** implemented: the `live-dashboards` CI job (`tests/live/run_live_dashboards.py`). CI only; nothing reaches a home.
 
 ## R14
 

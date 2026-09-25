@@ -37,6 +37,15 @@ installed and no YAML file was edited, so it can be recreated on any HA from
 | غرفة الأطفال (kids' room) | first | AC; a light and an air-quality sensor that are **unavailable** while the helper "Test kids room online" is off |
 | جناح الضيوف الشرقي مع الحمام وغرفة الملابس (east guest suite) | first | AC, sensors, 26 switches with long English names |
 
+## Rendered in CI
+
+`tests/live/run_live_dashboards.py` builds the same test villa in a throwaway
+Home Assistant container, applies every file above through the agent, and
+fails on a missing entity or a card error. It keeps screenshots of every view
+at phone, tablet, wall and NSPanel sizes, in each file's language, as the
+`live-dashboards-<version>` CI artefact. **A change to a file here is tested on
+the next push**: keep entity ids to the villa's.
+
 ## `bench-log.jsonl`
 
 One JSON object per line, one line for every API call that changed the bench:

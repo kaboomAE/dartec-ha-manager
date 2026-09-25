@@ -81,7 +81,14 @@ it:
 
 Recommendation R13 turns steps 1–2 into an automated check in this
 repository's CI, which already runs real HA containers
-([HANDOVER.md §4](../../HANDOVER.md#4-ci)).
+([HANDOVER.md §4](../../HANDOVER.md#4-ci)). **Done (2026-09-26):** the
+`live-dashboards` job builds the villa in a throwaway container, applies every
+prototype through the agent, fails on a missing entity or a card error, and
+keeps the phone, tablet, wall and NSPanel screenshots in English and Arabic as
+the `live-dashboards-<version>` artefact, on 2026.8.3 and 2026.9.2 on every
+push and on `stable` and `beta` every week (`tests/live/run_live_dashboards.py`).
+Steps 3 and 4 need no bench any more for the prototypes; the bench remains the
+place for real hardware and for a theme on a real tablet.
 
 ## Themes: pinning and applying
 
