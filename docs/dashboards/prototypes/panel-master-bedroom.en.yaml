@@ -1,0 +1,132 @@
+# Prototype dashboard for docs/dashboards (bench test, 2026-09-25).
+# Entity ids are the bench's test villa; see bench-log.md to recreate it.
+# Push with lovelace/config/save (storage mode) to url_path dartec-proto-panel-en.
+title: Master bedroom panel (prototype)
+views:
+- title: Master bedroom
+  path: room
+  icon: mdi:bed-king
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    column_span: 2
+    cards:
+    - type: heading
+      heading: Master bedroom
+      icon: mdi:bed-king
+      badges:
+      - type: entity
+        entity: sensor.master_bedroom_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.master_bedroom_humidity
+        show_state: true
+        show_icon: true
+    - type: clock
+      clock_size: large
+      grid_options:
+        columns: 6
+        rows: 2
+      visibility:
+      - condition: screen
+        media_query: '(min-width: 600px)'
+    - type: button
+      name: Good night
+      icon: mdi:weather-night
+      show_state: false
+      tap_action:
+        action: perform-action
+        perform_action: scene.apply
+        data:
+          entities:
+            light.master_bedroom_ceiling: 'off'
+            light.bedside_left: 'off'
+            light.bedside_right: 'off'
+            cover.master_bedroom_blackout: closed
+            climate.master_bedroom_ac:
+              state: cool
+              preset_mode: sleep
+      grid_options:
+        columns: 6
+        rows: 2
+  - type: grid
+    cards:
+    - type: thermostat
+      entity: climate.master_bedroom_ac
+      name: AC
+      show_current_as_primary: false
+      features:
+      - &id001
+        type: climate-hvac-modes
+        style: icons
+        hvac_modes:
+        - cool
+        - dry
+        - fan_only
+        - 'off'
+      - type: climate-preset-modes
+        style: icons
+        preset_modes:
+        - home
+        - sleep
+        - away
+      grid_options:
+        columns: 12
+      visibility:
+      - condition: screen
+        media_query: '(min-width: 600px)'
+    - type: tile
+      entity: climate.master_bedroom_ac
+      name: AC
+      features:
+      - *id001
+      - type: target-temperature
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+      visibility:
+      - condition: screen
+        media_query: '(max-width: 599px)'
+  - type: grid
+    cards:
+    - type: heading
+      heading: Lights
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: All off
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: grf_lnwm_lryysy
+    - type: tile
+      entity: light.master_bedroom_ceiling
+      name: Ceiling
+      features:
+      - type: light-brightness
+      grid_options:
+        columns: 12
+    - type: tile
+      entity: light.bedside_left
+      name: Bedside left
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.bedside_right
+      name: Bedside right
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: cover.master_bedroom_blackout
+      name: Blackout curtain
+      features:
+      - type: cover-open-close
+      - type: cover-position
+      grid_options:
+        columns: 12

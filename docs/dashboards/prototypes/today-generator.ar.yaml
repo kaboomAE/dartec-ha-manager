@@ -1,0 +1,295 @@
+# What Dartec's manager generates today for the bench's test rooms: the output of
+# server/app/room_dashboards.py compile_room (manager main, commit 5935326), language ar,
+# one view per room here; in a home each room is its own dartec-room-* dashboard.
+title: المولد الحالي (غرف الاختبار)
+views:
+- title: المجلس
+  path: majlis
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+    - type: tile
+      entity: light.majlis_chandelier
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.majlis_downlights
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.majlis_reading_lamp
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.majlis_wall_washers
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.d_lsqf_lmkhfy_hwl_lmjls_lryysy
+      features:
+      - type: light-brightness
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.majlis_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.majlis_humidity
+    - type: tile
+      entity: sensor.majlis_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:blinds
+    - type: tile
+      entity: cover.majlis_curtains
+      features:
+      - type: cover-open-close
+  - type: grid
+    cards:
+    - type: heading
+      heading: المفاتيح
+      icon: mdi:toggle-switch
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_left
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_right
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_1
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_2
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_3
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_4
+- title: الصالة العائلية
+  path: hall
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+    - type: tile
+      entity: light.family_hall_ceiling
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.family_hall_spots
+      features:
+      - type: light-brightness
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.family_hall_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.family_hall_humidity
+    - type: tile
+      entity: sensor.family_hall_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:blinds
+    - type: tile
+      entity: cover.family_hall_blinds
+      features:
+      - type: cover-open-close
+- title: المطبخ
+  path: kitchen
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+    - type: tile
+      entity: light.kitchen_ceiling
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.kitchen_under_cabinet
+      features:
+      - type: light-brightness
+  - type: grid
+    cards:
+    - type: heading
+      heading: الأبواب والأمان
+      icon: mdi:shield-home
+    - type: tile
+      entity: binary_sensor.kitchen_water_leak
+- title: غرفة الخادمة
+  path: maid
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+    - type: tile
+      entity: light.maid_s_room_light
+      features:
+      - type: light-brightness
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.maid_s_room_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.maid_s_room_temperature
+- title: غرفة النوم الرئيسية
+  path: master
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+    - type: tile
+      entity: light.bedside_left
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.bedside_right
+      features:
+      - type: light-brightness
+    - type: tile
+      entity: light.master_bedroom_ceiling
+      features:
+      - type: light-brightness
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.master_bedroom_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.master_bedroom_humidity
+    - type: tile
+      entity: sensor.master_bedroom_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:blinds
+    - type: tile
+      entity: cover.master_bedroom_blackout
+      features:
+      - type: cover-open-close
+- title: غرفة الأطفال
+  path: kids
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.kids_room_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.kids_room_temperature
+- title: جناح الضيوف الشرقي مع الحمام وغرفة الملابس
+  path: suite
+  icon: mdi:door
+  type: sections
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:thermostat
+    - type: tile
+      entity: climate.east_guest_suite_ac
+      features:
+      - type: target-temperature
+    - type: tile
+      entity: sensor.east_guest_suite_humidity
+    - type: tile
+      entity: sensor.east_guest_suite_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: المفاتيح
+      icon: mdi:toggle-switch
+    - type: tile
+      entity: switch.east_guest_suite_circuit_01_ceiling_downlights_near_the_window
+    - type: tile
+      entity: switch.east_guest_suite_circuit_02_ceiling_downlights_near_the_door
+    - type: tile
+      entity: switch.east_guest_suite_circuit_03_cove_lighting
+    - type: tile
+      entity: switch.east_guest_suite_circuit_04_wardrobe_lights
+    - type: tile
+      entity: switch.east_guest_suite_circuit_05_dressing_room_mirror
+    - type: tile
+      entity: switch.east_guest_suite_circuit_06_bathroom_ceiling
+    - type: tile
+      entity: switch.east_guest_suite_circuit_07_bathroom_mirror
+    - type: tile
+      entity: switch.east_guest_suite_circuit_08_bathroom_exhaust_fan
+    - type: tile
+      entity: switch.east_guest_suite_circuit_09_shower_niche
+    - type: tile
+      entity: switch.east_guest_suite_circuit_10_toilet_ceiling
+    - type: tile
+      entity: switch.east_guest_suite_circuit_11_bedside_reading_left
+    - type: tile
+      entity: switch.east_guest_suite_circuit_12_bedside_reading_right
+    - type: tile
+      entity: switch.east_guest_suite_circuit_13_floor_washers
+    - type: tile
+      entity: switch.east_guest_suite_circuit_14_tv_wall_backlight
+    - type: tile
+      entity: switch.east_guest_suite_circuit_15_entrance_lobby
+    - type: tile
+      entity: switch.east_guest_suite_circuit_16_balcony_wall_lights
+    - type: tile
+      entity: switch.east_guest_suite_circuit_17_balcony_floor_lights
+    - type: tile
+      entity: switch.east_guest_suite_circuit_18_desk_lamp_socket
+    - type: tile
+      entity: switch.east_guest_suite_circuit_19_coffee_station_socket
+    - type: tile
+      entity: switch.east_guest_suite_circuit_20_hair_dryer_socket
+    - type: tile
+      entity: switch.east_guest_suite_circuit_21_towel_warmer
+    - type: tile
+      entity: switch.east_guest_suite_circuit_22_water_heater
+    - type: tile
+      entity: switch.east_guest_suite_circuit_23_curtain_motor_power
+    - type: tile
+      entity: switch.east_guest_suite_circuit_24_night_light

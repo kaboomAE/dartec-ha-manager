@@ -1,0 +1,137 @@
+# Prototype dashboard for docs/dashboards (bench test, 2026-09-25).
+# Entity ids are the bench's test villa; see bench-log.md to recreate it.
+# Push with lovelace/config/save (storage mode) to url_path dartec-proto-room-en.
+title: Majlis (prototype)
+views:
+- title: Majlis
+  path: room
+  icon: mdi:sofa
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: Climate
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.majlis_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.majlis_humidity
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.majlis_ac
+      name: AC
+      features:
+      - type: climate-hvac-modes
+        style: icons
+        hvac_modes:
+        - cool
+        - dry
+        - fan_only
+        - 'off'
+      - type: target-temperature
+      - type: climate-preset-modes
+        style: icons
+        preset_modes:
+        - home
+        - sleep
+        - away
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: Lights
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: All off
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: lmjls
+    - type: tile
+      entity: light.majlis_chandelier
+      name: Chandelier
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_downlights
+      name: Downlights
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.d_lsqf_lmkhfy_hwl_lmjls_lryysy
+      name: Hidden ceiling cove
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_wall_washers
+      name: Wall washers
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_reading_lamp
+      name: Reading lamp
+      features:
+      - type: light-brightness
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: Curtains and blinds
+      icon: mdi:curtains
+    - type: tile
+      entity: cover.majlis_curtains
+      name: Curtains
+      features:
+      - type: cover-open-close
+      - type: cover-position
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: Switches and sockets
+      icon: mdi:power-socket-uk
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_1
+      name: Incense burner socket
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_2
+      name: Display cabinet
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_3
+      name: TV socket
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_4
+      name: Spare (relay channel 4)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_left
+      name: Entrance light
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_right
+      name: Corridor light
+      grid_options:
+        columns: 6
