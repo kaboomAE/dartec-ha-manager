@@ -336,6 +336,18 @@ Medium from `/dartec_branding/fonts/` and declares them from
   `ha-font-family-code`: `"'Dartec Plex Mono', 'IBM Plex Mono', ui-monospace, monospace"`.
   The drafts below still name `'Dartec Dubai'` first; with no such face
   declared, browsers skip it, so they render the same.
+- **Proved on the bench (2026-09-26, HA 2026.9.3)** with the agent at the
+  commit that shipped it, the Dartec theme applied in the test browser with
+  the stack above, and the agent put back to 0.23.0 afterwards. Arabic pages
+  fetched Lateef from `/dartec_branding/fonts/` (200, `font/woff2`) and set
+  it; English pages and a dashboard with no Arabic text fetched nothing.
+  Before and after, English and Arabic, light and dark:
+  [profile, tablet](../fonts/r15-profile-tablet-before-after.webp),
+  [Arabic detail](../fonts/r15-arabic-detail-before-after.webp),
+  [bedroom, phone](../fonts/r15-bedroom-phone-before-after.webp). (The theme
+  picker reads "Dartec" only in the after shots because another bench test
+  set that account's theme between the runs; both runs render the same
+  in-browser theme.)
 
 **What a theme cannot do with fonts:**
 
