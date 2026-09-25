@@ -248,6 +248,8 @@ tunnel_status, tunnel_setup, tunnel_stop,
 backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 ```
 
+`lovelace_create` takes optional `show_in_sidebar` and `require_admin` (booleans; anything else is refused and nothing is created). Left out, they are what they always were: in the sidebar, open to everyone. `require_admin: true` is how the manager makes an admin-only preview (#65). The answer carries both as applied.
+
 `lovelace_update` (0.21.0) renames a storage dashboard: payload `{url_path, title, icon?}`, answered with `previous_title`, and a line in the household's logbook. Rollout sets a title only when it creates a dashboard, so this is the one way to correct one afterwards (dartec-ha-manager#25). Like the mutating blueprint commands it is not in the manager's generic `ALLOWED_ACTIONS`: it has its own audited route, `PATCH /api/instances/{id}/lovelace`.
 
 **Room panels (0.23.0).** Four commands, the manager's side and the contract are in dartec-ha-manager-server `docs/23-room-panels.md`; rules in `panels.py`:
