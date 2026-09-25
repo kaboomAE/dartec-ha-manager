@@ -168,7 +168,7 @@ stays true until one is on the bench.
 
 A panel account has its own language setting. It is stored on the server, per
 account, so every panel in an Arabic-speaking household should be set to Arabic
-when it is created. Today `panel_setup` does not do that. It is recommendation
-**R6**. The panel then mirrors right-to-left and uses the Arabic dashboard. See
+when it is created. `panel_setup` takes an optional `language` (and `theme`)
+for exactly that (recommendation **R6**, agent change not yet released). The panel then mirrors right-to-left and uses the Arabic dashboard. See
 [arabic-rtl.md](arabic-rtl.md) for what that looks like, including the
 untranslated "On/Off" states.

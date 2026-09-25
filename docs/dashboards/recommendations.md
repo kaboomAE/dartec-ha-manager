@@ -88,6 +88,7 @@ Ranked by benefit to the family first, then by effort. Each section says whether
 - **Evidence:** [panels.md#arabic-on-a-panel](panels.md#arabic-on-a-panel)
 - **Benefit:** Medium–high: Arabic panels without a technician touching the profile. **Effort:** S–M (with the live panel test extended). **Risk:** Low.
 - **Issue:** [#49](https://github.com/kaboomAE/dartec-ha-manager/issues/49)
+- **Status (2026-09-26):** implemented in the agent, not yet released. `panel_setup` and `panel_update` take `language` and `theme` (the owner's update of 2026-09-25: a panel may have its own theme, such as Dartec Glass Lite), and My Home can set anyone's language, their own included. The manager has to send them: it is a new optional field on its panel set-up.
 
 ## R7
 

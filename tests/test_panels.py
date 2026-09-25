@@ -191,8 +191,12 @@ class TestWhatTheManagerIsTold:
         row = p.status_row(KITCHEN, [], "dartec-room-kitchen")
         assert row == {"user_id": "u-kitchen", "username": "panel-kitchen",
                        "name": "Kitchen panel", "is_active": True, "local_only": True,
-                       "default_panel": "dartec-room-kitchen", "signed_in": False,
-                       "last_used_at": None}
+                       "default_panel": "dartec-room-kitchen", "language": None,
+                       "theme": None, "signed_in": False, "last_used_at": None}
+
+    def test_its_own_language_and_theme_are_reported(self):
+        row = p.status_row(KITCHEN, [], "dartec-room-kitchen", "ar", "Dartec Glass Lite")
+        assert row["language"] == "ar" and row["theme"] == "Dartec Glass Lite"
 
     def test_the_latest_sign_in_is_reported(self):
         now = datetime(2026, 9, 19, 10, tzinfo=timezone.utc)
