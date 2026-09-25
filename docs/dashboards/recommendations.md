@@ -19,6 +19,9 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 | R13 | [Render the generated dashboards in CI on every HA version, at panel sizes, in English and Arabic](#r13) | Medium: catches breakage before the fleet takes a release | M | None (CI only) | [#56](https://github.com/kaboomAE/dartec-ha-manager/issues/56) |
 | R14 | [Dashboards for domestic staff, chosen per person in My Home](#r14) | Medium | M | Medium: families may read it as access control; the wording must be clear | [#57](https://github.com/kaboomAE/dartec-ha-manager/issues/57) |
 | R15 | [Serve Dartec's brand fonts from the agent: Lateef for Arabic, Dubai for Latin, Plex Mono](#r15) | Medium: the brand's typography in every home, and correctly sized Arabic | S–M | Low–medium: an unsupported HA variable (`--ha-font-family-body`) to re-check each release; Dubai's licence | [#59](https://github.com/kaboomAE/dartec-ha-manager/issues/59) |
+| R16 | [Never drop devices that are in no room: show them, count them, ask for them to be placed](#r16) | High on any house that grew over time | S–M | Low | [#61](https://github.com/kaboomAE/dartec-ha-manager/issues/61) |
+| R17 | [Collapse light-strip segments, effect toggles and duplicate power switches](#r17) | High: removes most of the noise on houses with LED strips | S | Low: name patterns, so keep a report of what was collapsed | [#62](https://github.com/kaboomAE/dartec-ha-manager/issues/62) |
+| R18 | [Keep machine controls (heaters, programs, dispensers) off family dashboards](#r18) | High: a safety rule | S | Low | [#63](https://github.com/kaboomAE/dartec-ha-manager/issues/63) |
 
 ## R1
 
@@ -184,6 +187,39 @@ Ranked by benefit to the family first, then by effort. **None of these is implem
 - **Evidence:** [dartec-variants/README.md#fonts](dartec-variants/README.md#fonts)
 - **Benefit:** Medium: the brand's typography in every home, and correctly sized Arabic. **Effort:** S–M. **Risk:** Low–medium: an unsupported HA variable (`--ha-font-family-body`) to re-check each release; Dubai's licence.
 - **Issue:** [#59](https://github.com/kaboomAE/dartec-ha-manager/issues/59)
+
+## R16
+
+**Never drop devices that are in no room: show them, count them, ask for them to be placed**
+
+- **Where:** Manager: `room_dashboards.build_rooms` (counts `unassigned` and drops them) and the Dartec Home overview
+- **Problem:** On a real house 90 of 134 devices and 347 user-facing entities had no area. A room-first dashboard shows a fraction of the house and says nothing about the rest; the manager's generator counts them as `unassigned` and leaves them out.
+- **Change:** Add a 'Not in a room yet (N)' view linked from the overview with its count, holding every unassigned device's main entity (media players with no room excepted: cast groups and personal laptops and phones). Report the count to the technician in the manager, with the manager's existing room suggestions (names often contain a room word) as a nudge to place them.
+- **Evidence:** [real-home-test.md](real-home-test.md)
+- **Benefit:** High on any house that grew over time. **Effort:** S–M. **Risk:** Low.
+- **Issue:** [#61](https://github.com/kaboomAE/dartec-ha-manager/issues/61)
+
+## R17
+
+**Collapse light-strip segments, effect toggles and duplicate power switches**
+
+- **Where:** Manager: entity selection for generated dashboards (`blueprint._usable` / `room_dashboards`)
+- **Problem:** LED strips expose 15–28 'Segment NNN' light entities each plus effect toggles, and the same strip can be registered twice by two integrations (a light, and a 'Power Switch' on a different device). On a real house that was 116 segment lights, 15 effect toggles and 8 duplicate switches; one room had 45 light entities from 2 devices.
+- **Change:** Treat a light named '<device> Segment N' as a segment and show only the strip's own light; leave effect toggles off; when a light 'X' exists, leave off a switch named 'X Power Switch' and report the duplicate to the technician.
+- **Evidence:** [real-home-test.md](real-home-test.md)
+- **Benefit:** High: removes most of the noise on houses with LED strips. **Effort:** S. **Risk:** Low: name patterns, so keep a report of what was collapsed.
+- **Issue:** [#62](https://github.com/kaboomAE/dartec-ha-manager/issues/62)
+
+## R18
+
+**Keep machine controls (heaters, programs, dispensers) off family dashboards**
+
+- **Where:** Manager: entity selection for generated dashboards
+- **Problem:** 3D printers expose heater output pins as ordinary switches, a dishwasher exposes 15 program switches, and a pet appliance exposes dispensing controls. A generator that includes every switch puts a heater one tap away on a family dashboard.
+- **Change:** For devices from machine integrations (3D printers, appliances with programs, feeders and the like), show at most one status or power tile and link to the device's own page; never generate tiles for heaters, programs or dispensers. Give a room whose devices are all machines a status tile so it does not vanish from the overview.
+- **Evidence:** [real-home-test.md](real-home-test.md)
+- **Benefit:** High: a safety rule. **Effort:** S. **Risk:** Low.
+- **Issue:** [#63](https://github.com/kaboomAE/dartec-ha-manager/issues/63)
 
 ## What is deliberately not recommended
 
