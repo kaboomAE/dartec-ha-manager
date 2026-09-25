@@ -1,0 +1,851 @@
+# Prototype dashboard for docs/dashboards (bench test, 2026-09-25).
+# Entity ids are the bench's test villa; see bench-log.md to recreate it.
+# Push with lovelace/config/save (storage mode) to url_path dartec-proto-home-ar.
+title: المنزل (نموذج)
+views:
+- title: المنزل
+  path: home
+  icon: mdi:home
+  type: sections
+  max_columns: 3
+  sections:
+  - type: grid
+    column_span: 1
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: button
+        text: إيقاف كل المكيفات
+        icon: mdi:power
+        tap_action:
+          action: perform-action
+          perform_action: climate.turn_off
+          target:
+            entity_id:
+            - climate.majlis_ac
+            - climate.family_hall_ac
+            - climate.maid_s_room_ac
+            - climate.master_bedroom_ac
+            - climate.kids_room_ac
+            - climate.east_guest_suite_ac
+          confirmation:
+            text: هل تريد إيقاف جميع المكيفات في المنزل؟
+    - type: tile
+      entity: climate.majlis_ac
+      name: المجلس
+      features:
+      - &id001
+        type: target-temperature
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+    - type: tile
+      entity: climate.family_hall_ac
+      name: الصالة العائلية
+      features:
+      - *id001
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+    - type: tile
+      entity: climate.maid_s_room_ac
+      name: غرفة الخادمة
+      features:
+      - *id001
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+    - type: tile
+      entity: climate.master_bedroom_ac
+      name: غرفة النوم الرئيسية
+      features:
+      - *id001
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+    - type: tile
+      entity: climate.kids_room_ac
+      name: غرفة الأطفال
+      features:
+      - *id001
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+    - type: tile
+      entity: climate.east_guest_suite_ac
+      name: جناح الضيوف الشرقي مع الحمام وغرفة الملابس
+      features:
+      - *id001
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الطابق الأرضي
+      icon: mdi:home-floor-g
+    - type: area
+      area: lmjls
+      name: المجلس
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-majlis
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+    - type: area
+      area: lsl_l_yly
+      name: الصالة العائلية
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-hall
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+    - type: area
+      area: lmtbkh
+      name: المطبخ
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-kitchen
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+    - type: area
+      area: grf_lkhdm
+      name: غرفة الخادمة
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-maid
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: الطابق الأول
+      icon: mdi:home-floor-1
+    - type: area
+      area: grf_lnwm_lryysy
+      name: غرفة النوم الرئيسية
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-master
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+    - type: area
+      area: grf_ltfl
+      name: غرفة الأطفال
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-kids
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+    - type: area
+      area: jnh_ldywf_lshrqy_m_lhmm_wgrf_lmlbs
+      name: جناح الضيوف الشرقي مع الحمام وغرفة الملابس
+      display_type: compact
+      navigation_path: /dartec-proto-home-ar/room-suite
+      features:
+      - type: area-controls
+        controls:
+        - light
+      features_position: inline
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: السلامة
+      icon: mdi:shield-home
+    - type: tile
+      entity: binary_sensor.kitchen_water_leak
+      name: تسرب المياه
+      grid_options:
+        columns: 12
+    - type: entity-filter
+      entities:
+      - sensor.majlis_temperature
+      - sensor.majlis_humidity
+      - climate.majlis_ac
+      - light.majlis_chandelier
+      - light.majlis_downlights
+      - light.d_lsqf_lmkhfy_hwl_lmjls_lryysy
+      - light.majlis_wall_washers
+      - light.majlis_reading_lamp
+      - cover.majlis_curtains
+      - switch.sonoff_4chpror3_switch_1
+      - switch.sonoff_4chpror3_switch_2
+      - switch.sonoff_4chpror3_switch_3
+      - switch.sonoff_4chpror3_switch_4
+      - switch.aqara_wall_switch_h1_dual_left
+      - switch.aqara_wall_switch_h1_dual_right
+      - sensor.family_hall_temperature
+      - sensor.family_hall_humidity
+      - climate.family_hall_ac
+      - light.family_hall_ceiling
+      - light.family_hall_spots
+      - cover.family_hall_blinds
+      - light.kitchen_ceiling
+      - light.kitchen_under_cabinet
+      - binary_sensor.kitchen_water_leak
+      - sensor.maid_s_room_temperature
+      - climate.maid_s_room_ac
+      - light.maid_s_room_light
+      - sensor.master_bedroom_temperature
+      - sensor.master_bedroom_humidity
+      - climate.master_bedroom_ac
+      - light.master_bedroom_ceiling
+      - light.bedside_left
+      - light.bedside_right
+      - cover.master_bedroom_blackout
+      - sensor.kids_room_temperature
+      - climate.kids_room_ac
+      - light.kids_room_light
+      - sensor.kids_room_air_quality
+      state_filter:
+      - unavailable
+      show_empty: false
+      card:
+        type: entities
+        title: يحتاج إلى متابعة
+- title: المجلس
+  path: room-majlis
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.majlis_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.majlis_humidity
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.majlis_ac
+      name: المكيف
+      features:
+      - &id002
+        type: climate-hvac-modes
+        style: icons
+        hvac_modes:
+        - cool
+        - dry
+        - fan_only
+        - 'off'
+      - *id001
+      - &id003
+        type: climate-preset-modes
+        style: icons
+        preset_modes:
+        - home
+        - sleep
+        - away
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: lmjls
+    - type: tile
+      entity: light.majlis_chandelier
+      name: الثريا
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_downlights
+      name: السبوتات
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.d_lsqf_lmkhfy_hwl_lmjls_lryysy
+      name: إضاءة السقف المخفية حول المجلس الرئيسي
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_wall_washers
+      name: إضاءة الجدران
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.majlis_reading_lamp
+      name: مصباح القراءة
+      features:
+      - type: light-brightness
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:curtains
+    - type: tile
+      entity: cover.majlis_curtains
+      name: الستائر
+      features:
+      - type: cover-open-close
+      - type: cover-position
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: المفاتيح والمقابس
+      icon: mdi:power-socket-uk
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_1
+      name: مقبس المبخرة
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_2
+      name: إضاءة الخزانة
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_3
+      name: مقبس التلفاز
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.sonoff_4chpror3_switch_4
+      name: احتياطي (القناة 4)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_left
+      name: إضاءة المدخل
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.aqara_wall_switch_h1_dual_right
+      name: إضاءة الممر
+      grid_options:
+        columns: 6
+- title: الصالة العائلية
+  path: room-hall
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.family_hall_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.family_hall_humidity
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.family_hall_ac
+      name: المكيف
+      features:
+      - *id002
+      - *id001
+      - *id003
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: lsl_l_yly
+    - type: tile
+      entity: light.family_hall_ceiling
+      name: السقف
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.family_hall_spots
+      name: السبوتات
+      grid_options:
+        columns: 6
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:curtains
+    - type: tile
+      entity: cover.family_hall_blinds
+      name: الستائر
+      features:
+      - type: cover-open-close
+      - type: cover-position
+      grid_options:
+        columns: 12
+- title: المطبخ
+  path: room-kitchen
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: lmtbkh
+    - type: tile
+      entity: light.kitchen_ceiling
+      name: السقف
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.kitchen_under_cabinet
+      name: أسفل الخزائن
+      grid_options:
+        columns: 6
+  - type: grid
+    cards:
+    - type: heading
+      heading: الحساسات
+      icon: mdi:eye
+    - type: tile
+      entity: binary_sensor.kitchen_water_leak
+      name: تسرب المياه
+      grid_options:
+        columns: 6
+- title: غرفة الخادمة
+  path: room-maid
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.maid_s_room_temperature
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.maid_s_room_ac
+      name: المكيف
+      features:
+      - *id002
+      - *id001
+      - *id003
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: grf_lkhdm
+    - type: tile
+      entity: light.maid_s_room_light
+      name: الإضاءة
+      grid_options:
+        columns: 6
+- title: غرفة النوم الرئيسية
+  path: room-master
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.master_bedroom_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.master_bedroom_humidity
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.master_bedroom_ac
+      name: المكيف
+      features:
+      - *id002
+      - *id001
+      - *id003
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: grf_lnwm_lryysy
+    - type: tile
+      entity: light.master_bedroom_ceiling
+      name: السقف
+      features:
+      - type: light-brightness
+      grid_options:
+        columns: 12
+    - type: tile
+      entity: light.bedside_left
+      name: جانب السرير الأيسر
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: light.bedside_right
+      name: جانب السرير الأيمن
+      grid_options:
+        columns: 6
+  - type: grid
+    cards:
+    - type: heading
+      heading: الستائر
+      icon: mdi:curtains
+    - type: tile
+      entity: cover.master_bedroom_blackout
+      name: ستارة التعتيم
+      features:
+      - type: cover-open-close
+      - type: cover-position
+      grid_options:
+        columns: 12
+- title: غرفة الأطفال
+  path: room-kids
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.kids_room_temperature
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.kids_room_ac
+      name: المكيف
+      features:
+      - *id002
+      - *id001
+      - *id003
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: الإضاءة
+      icon: mdi:lightbulb-group
+      badges:
+      - type: button
+        text: إطفاء الكل
+        icon: mdi:lightbulb-off
+        tap_action:
+          action: perform-action
+          perform_action: light.turn_off
+          target:
+            area_id: grf_ltfl
+    - type: tile
+      entity: light.kids_room_light
+      name: الإضاءة
+      features:
+      - type: light-brightness
+      grid_options:
+        columns: 12
+  - type: grid
+    cards:
+    - type: heading
+      heading: الحساسات
+      icon: mdi:eye
+    - type: tile
+      entity: sensor.kids_room_air_quality
+      name: جودة الهواء
+      grid_options:
+        columns: 6
+- title: جناح الضيوف الشرقي مع الحمام وغرفة الملابس
+  path: room-suite
+  icon: mdi:door
+  subview: true
+  back_path: /dartec-proto-home-ar/home
+  type: sections
+  max_columns: 2
+  sections:
+  - type: grid
+    cards:
+    - type: heading
+      heading: التكييف
+      icon: mdi:snowflake
+      badges:
+      - type: entity
+        entity: sensor.east_guest_suite_temperature
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: sensor.east_guest_suite_humidity
+        show_state: true
+        show_icon: true
+    - type: tile
+      entity: climate.east_guest_suite_ac
+      name: المكيف
+      features:
+      - *id002
+      - *id001
+      - *id003
+      grid_options:
+        columns: 12
+      state_content:
+      - state
+      - current_temperature
+  - type: grid
+    cards:
+    - type: heading
+      heading: المفاتيح والمقابس
+      icon: mdi:power-socket-uk
+    - type: tile
+      entity: switch.east_guest_suite_circuit_01_ceiling_downlights_near_the_window
+      name: Circuit 01 (ceiling downlights near the window)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_02_ceiling_downlights_near_the_door
+      name: Circuit 02 (ceiling downlights near the door)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_03_cove_lighting
+      name: Circuit 03 (cove lighting)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_04_wardrobe_lights
+      name: Circuit 04 (wardrobe lights)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_05_dressing_room_mirror
+      name: Circuit 05 (dressing room mirror)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_06_bathroom_ceiling
+      name: Circuit 06 (bathroom ceiling)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_07_bathroom_mirror
+      name: Circuit 07 (bathroom mirror)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_08_bathroom_exhaust_fan
+      name: Circuit 08 (bathroom exhaust fan)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_09_shower_niche
+      name: Circuit 09 (shower niche)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_10_toilet_ceiling
+      name: Circuit 10 (toilet ceiling)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_11_bedside_reading_left
+      name: Circuit 11 (bedside reading left)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_12_bedside_reading_right
+      name: Circuit 12 (bedside reading right)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_13_floor_washers
+      name: Circuit 13 (floor washers)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_14_tv_wall_backlight
+      name: Circuit 14 (TV wall backlight)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_15_entrance_lobby
+      name: Circuit 15 (entrance lobby)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_16_balcony_wall_lights
+      name: Circuit 16 (balcony wall lights)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_17_balcony_floor_lights
+      name: Circuit 17 (balcony floor lights)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_18_desk_lamp_socket
+      name: Circuit 18 (desk lamp socket)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_19_coffee_station_socket
+      name: Circuit 19 (coffee station socket)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_20_hair_dryer_socket
+      name: Circuit 20 (hair dryer socket)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_21_towel_warmer
+      name: Circuit 21 (towel warmer)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_22_water_heater
+      name: Circuit 22 (water heater)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_23_curtain_motor_power
+      name: Circuit 23 (curtain motor power)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_24_night_light
+      name: Circuit 24 (night light)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_25_wardrobe_dehumidifier
+      name: Circuit 25 (wardrobe dehumidifier)
+      grid_options:
+        columns: 6
+    - type: tile
+      entity: switch.east_guest_suite_circuit_26_spare_circuit
+      name: Circuit 26 (spare circuit)
+      grid_options:
+        columns: 6
