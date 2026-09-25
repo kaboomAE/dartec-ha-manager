@@ -54,6 +54,9 @@ What it asserts:
 * **The notification fix still works.** In dark mode with the Dartec theme, a
   notification row in Dwains' own notification panel reaches 4.5:1 between
   its text and its background.
+* **The brand's fonts load** (dartec-ha-manager#59). The same module declares
+  them: each file is served exactly as shipped, Lateef and Plex Mono load in
+  both browsers, Lateef is Arabic only at 150%, and no Dubai face exists.
 * Without the fix the upstream error is reported, not failed on. With
   `--expect-clean` it fails too: the check for Dwains having fixed it, at
   which point the workaround can go.
@@ -94,7 +97,8 @@ ASSETS = {
     "dartec.yaml": ("kaboomAE/dartec-theme", "v1.1.0", "themes/dartec.yaml"),
 }
 USER, PASSWORD = "livetest", "live-test-password"
-FIX_URL = "**/dartec_branding/dashboard-fix.js"
+# With its cache buster: the agent registers it as dashboard-fix.js?v=<hash>.
+FIX_URL = re.compile(r"/dartec_branding/dashboard-fix\.js(\?|$)")
 DASHBOARD = "dwains-dashboard"
 CARD_MOD = "/local/card-mod.js"
 # Home Assistant hands cards its formatters and its config through Lit context
@@ -496,6 +500,68 @@ def check_home_cards(pw, base: str, stored: dict) -> dict:
     return out
 
 
+# The brand's fonts, declared by the same module (dartec-ha-manager#59):
+# each face the module declares, after asking the browser for the ones a
+# Dartec theme uses, in Arabic and in figures.
+FONTS = """async () => {
+  const clean = (s) => s.replace(/["']/g, "");
+  await Promise.all([
+    document.fonts.load("400 16px 'Dartec Lateef'", "بيت"),
+    document.fonts.load("700 16px 'Dartec Lateef'", "بيت"),
+    document.fonts.load("500 16px 'Dartec Plex Mono'", "0123456789")]);
+  return [...document.fonts].filter((f) => /dartec|dubai/i.test(clean(f.family))).map((f) => ({
+    family: clean(f.family), weight: f.weight, status: f.status,
+    unicodeRange: f.unicodeRange, sizeAdjust: f.sizeAdjust || null}));
+}"""
+FONT_FILES = ("Lateef-Regular.woff2", "Lateef-Medium.woff2", "Lateef-Bold.woff2",
+              "IBMPlexMono-Medium-Latin1.woff2")
+FONT_DIR = HERE.parents[1] / "custom_components" / AGENT_DOMAIN / "www" / "fonts"
+
+
+def check_fonts(pw, base: str, stored: dict) -> dict:
+    """What the agent serves, and what each browser makes of it."""
+    served = {}
+    for name in FONT_FILES:
+        with urllib.request.urlopen(f"{base}/dartec_branding/fonts/{name}", timeout=30) as r:
+            served[name] = {"status": r.status, "type": r.headers.get("Content-Type"),
+                            "same": r.read() == (FONT_DIR / name).read_bytes()}
+    out = {"served": served}
+    for engine in ENGINES:
+        browser = getattr(pw, engine).launch()
+        context = new_context(browser, stored, "light", True)
+        page = context.new_page()
+        page.goto(f"{base}/profile", wait_until="load", timeout=60000)
+        out[engine] = page.evaluate(FONTS)
+        context.close()
+        browser.close()
+    return out
+
+
+def font_problems(fonts: dict) -> list[str]:
+    problems = [f"{name} is not served as shipped: {got}"
+                for name, got in fonts["served"].items()
+                if got["status"] != 200 or not got["same"]]
+    for engine in ENGINES:
+        faces = fonts.get(engine) or []
+        by = {(f["family"], f["weight"]): f for f in faces}
+        if any("dubai" in f["family"].lower() for f in faces):
+            problems.append(f"{engine}: a Dubai face is declared: {faces}")
+        for key in (("Dartec Lateef", "400"), ("Dartec Lateef", "700"),
+                    ("Dartec Plex Mono", "500")):
+            face = next((f for (fam, w), f in by.items()
+                         if fam == key[0] and key[1] in w.split()), None)
+            if not face or face["status"] != "loaded":
+                problems.append(f"{engine}: {key[0]} {key[1]} did not load: {faces}")
+        for f in faces:
+            if f["family"] != "Dartec Lateef":
+                continue
+            if "U+600-6FF" not in f["unicodeRange"].upper() or "U+0-" in f["unicodeRange"].upper():
+                problems.append(f"{engine}: Lateef is not Arabic only: {f}")
+            if f["sizeAdjust"] not in (None, "150%"):
+                problems.append(f"{engine}: Lateef is not set at 150%: {f}")
+    return problems
+
+
 def check_cause(pw, base: str, stored: dict) -> dict:
     out = {}
     for engine in ENGINES:
@@ -610,6 +676,7 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                 each.close()
             cause = check_cause(pw, base, stored)
             home_cards = check_home_cards(pw, base, stored)
+            fonts = check_fonts(pw, base, stored)
 
         rows.sort(key=lambda r: (r["engine"], not r["fix_loaded"], r["scheme"] != "light",
                                  not r["card_mod"], r["theme"] != "Dartec"))
@@ -617,6 +684,8 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: notification row in dark mode: {notification}")
         log(f"{version}: the card host mounted by hand: {cause}")
         log(f"{version}: the stored Home custom card after a reload: {home_cards}")
+        log(f"{version}: the brand's fonts: {fonts}")
+        problems.extend(font_problems(fonts))
         for engine in ENGINES:
             shown = home_cards.get(f"{engine}-fix") or {}
             if shown.get("config") != 1 or shown.get("drawn") != 1:
@@ -705,7 +774,7 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                 {"versions": {"home_assistant": version,
                               **{f: ASSETS[f][1] for f in ASSETS}},
                  "rows": rows, "notification": notification, "cause": cause,
-                 "home_cards": home_cards},
+                 "home_cards": home_cards, "fonts": fonts},
                 indent=1), encoding="utf-8")
             (shots / "table.md").write_text(table(rows) + "\n", encoding="utf-8")
     except Failure as err:

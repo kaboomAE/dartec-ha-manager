@@ -13,6 +13,7 @@
 #   dashboard fix loaded and blocked, in Firefox and Chromium; the fix must
 #   never change the errors, and must still make notifications readable in
 #   dark mode — see tests/live/run_live_dwains.py (dartec-ha-manager#25).
+#   It also checks the brand fonts the same module declares (#59).
 # - live-brand: the brand's old spelling staged on a home (a stored default
 #   theme under the old name, the entry title, a dashboard title) and put
 #   right - see tests/live/run_live_brand.py.
