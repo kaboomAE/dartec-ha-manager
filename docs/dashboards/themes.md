@@ -19,6 +19,10 @@ reviewed: `bessertristan09/graphite-nightshade-theme` and
     screens show Roboto. IBM Plex Sans also has no Arabic letters.
   - It does not colour the AC controls, which stay Home Assistant blue.
   - Its repository has **no licence**.
+
+  The corrected theme, and five variants on the same brand, are drafted in
+  [dartec-variants/](dartec-variants/). That work also found the theme uses
+  copper, which the brand reserves for AI, as its accent.
 - **Offer three alternatives** where a customer wants a different look:
   **Catppuccin** (MIT), **Material You** (Apache-2.0) and **Mushroom Themes**
   (Apache-2.0). **Minimal Ninja** (Apache-2.0) also passes, but its accent is

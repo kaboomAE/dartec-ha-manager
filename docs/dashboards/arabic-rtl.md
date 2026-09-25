@@ -105,7 +105,7 @@ headless browser only (nothing on the bench changed):
 
 | Font | At interface sizes | Licence | Verdict |
 |---|---|---|---|
-| **Lateef** (the storefront's Arabic font) | A traditional Naskh face with a small body. At HA's 12–14 px it is visibly smaller than the other three, and placed first in the font list it also replaced the Latin text ("Cool · 23.5 °C") with a small serif | SIL OFL 1.1 (Google Fonts) | **Not for the dashboard.** It suits the storefront's headings and body copy, not a 14 px label on a wall panel. If used at all, restrict it to Arabic with `unicode-range` and scale it up, which HA's variables cannot do per script |
+| **Lateef** (the storefront's Arabic font) | A traditional Naskh face with a small body. At HA's 12–14 px it is visibly smaller than the other three, and placed first in the font list it also replaced the Latin text ("Cool · 23.5 °C") with a small serif | SIL OFL 1.1 (Google Fonts) | **Unadjusted, not for the dashboard. With the storefront's `size-adjust: 150%` and Arabic-only `unicode-range`, it is right: see the correction below** |
 | **IBM Plex Sans Arabic** | Clear, a similar weight to Latin text, and designed to pair with IBM Plex Sans, which the Dartec theme already names | SIL OFL 1.1 | **Recommended** if Dartec ships a font |
 | **Noto Sans Arabic** | Clear, and what many Android tablets use already | SIL OFL 1.1 | A good choice, and nearly free: it is often already on the tablet |
 | Fallback (device font) | Segoe UI on Windows, Noto on Android | n/a | Acceptable today at no cost |
@@ -116,10 +116,35 @@ That licence has to be read before bundling it in the agent and serving it
 from every home. Visually it would behave like any Latin sans. The same
 loading mechanics and the same unsupported-variable risk apply.
 
-**Recommendation:** keep the device font now. When Dartec ships a font, ship
-**IBM Plex Sans Arabic + IBM Plex Sans** (both OFL) from the agent, named in
-`ha-font-family-body` by the Dartec theme. Keep Lateef and Dubai for the
-storefront and print. Recommendation R10 covers the theme side.
+**Correction (2026-09-25, later the same day).** The Lateef preview above
+loaded Lateef from Google Fonts with no size adjustment. The storefront sets
+it differently:
+
+- **`size-adjust: 150%`**, so Lateef renders at the same size as the Latin
+  text beside it;
+- **`unicode-range` restricted to Arabic**, so Latin text stays in Dubai.
+
+Set that way, and served from the brand's own web files, Lateef renders at
+the right size in every Home Assistant component on the bench, right to left
+included ([dartec-variants/README.md](dartec-variants/README.md#fonts)).
+
+![Bedroom panel in Arabic: Lateef for Arabic, Dubai for Latin](dartec-variants/screenshots/dartec-soft-panel-wall-light-ar.webp)
+
+**Recommendation:** use the brand's own faces:
+
+- **Lateef** for Arabic, with the storefront's `size-adjust` and
+  `unicode-range`;
+- **Dubai** for Latin;
+- both named by the Dartec theme and served by the agent.
+
+Two things come first:
+
+- **Dubai's licence must allow redistributing it** from the agent's public
+  repository.
+- **Loading the fonts** is its own recommendation (R15).
+
+IBM Plex Sans Arabic stays the fallback if Dubai cannot be shipped. Until
+then, the device font is acceptable.
 
 ## Checklist for an Arabic-speaking household
 

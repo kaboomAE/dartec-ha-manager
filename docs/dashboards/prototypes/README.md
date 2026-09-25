@@ -85,6 +85,24 @@ The log contains no token or password. The token lived in a file outside the
 repository and was only ever sent in the WebSocket `auth` message, which is
 not logged.
 
+## `bench-log-variants.jsonl`
+
+The same format, for the design-gallery follow-up (2026-09-25 evening). It
+has 337 calls:
+
+- the test villa rebuilt;
+- six prototype dashboards pushed;
+- Dartec theme v1.1.0 installed through HACS, pinned, and set as the default,
+  to prove that the in-page theme method is pixel-identical to a real install;
+- everything torn down again.
+
+Afterwards the bench was compared with a fresh snapshot taken at the start of
+that phase: identical.
+
+The draft Dartec variants were **not** written to the bench. They were
+applied by Home Assistant's own frontend code in the test browser; see
+[../dartec-variants/README.md](../dartec-variants/README.md#how-these-were-tested).
+
 ## What was not undone
 
 - Before switching to the API, the owner first signed in to the bench in the
