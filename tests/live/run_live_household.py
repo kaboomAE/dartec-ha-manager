@@ -21,7 +21,8 @@ checks through Home Assistant's own commands that:
   an admin who is not the owner cannot set a password; Dartec's account
   cannot change anything;
 * the logbook names who did each thing and never carries a password;
-* the snapshot carries only counts of people by role.
+* the snapshot carries only counts of people by role, and names nobody
+  anywhere: the people are there as ids (privacy.py).
 
 It also fails on any error Home Assistant logged against the agent.
 
@@ -107,15 +108,19 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
             problems.append(f"snapshot household is {section}, expected {expected}")
         if not isinstance(section, dict) or set(section) != COUNT_KEYS:
             problems.append(f"snapshot household carries more than counts: {section}")
-        # Names reach the manager today through two older sections this
-        # feature does not add to: the entity list (a `person.*` entity is
-        # named after its person) and Home Assistant's own log lines.
-        # dartec-ha-manager#20 asks the owner what to do about those. What
-        # is checked here is that nothing else names anyone.
-        older = re.compile(r"^\.(entities\[\d+\]\.(entity_id|name)|logs\[\d+\]\.message) ")
-        for where in mentions(snap, re.compile(r"(layla|omar)", re.I)):
-            if not older.match(where):
-                problems.append(f"the snapshot names a person at {where}")
+        # Nothing the manager is sent names anyone (dartec-ha-manager#20):
+        # not the person entities My Home links each account to, not the
+        # log lines, not anything else. The people are still there, as ids.
+        # (This used to have a literal backspace character where a regex word
+        # boundary was meant, so it matched nothing and checked nothing.)
+        for where in mentions(snap, re.compile(r"(layla|omar)", re.I)):
+            problems.append(f"the snapshot names a person at {where}")
+        if (snap.get("privacy") or {}).get("version") != 1:
+            problems.append(f"the snapshot is not marked as hiding names: {snap.get('privacy')}")
+        people = [row.get("entity_id") for row in snap.get("entities") or []
+                  if str(row.get("entity_id", "")).startswith("person.")]
+        if sum(1 for eid in people if re.fullmatch(r"person\.hm_[0-9a-f]{10}", eid)) < 2:
+            problems.append(f"Omar's and Layla's people are not in the snapshot as ids: {people}")
 
         text = ha_log(name)
         errors = [line.strip() for line in text.splitlines()

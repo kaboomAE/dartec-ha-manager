@@ -286,7 +286,14 @@ def check_inventory(name: str, base: str, token: str, timeout: float) -> tuple[l
                         "1000-row page; the larger inventory page is not in effect")
     ids = {row["entity_id"] for row in items}
     states = {s["entity_id"] for s in http("GET", f"{base}/api/states", token=token)}
-    missing = sorted(states - ids)
+    # People reach the manager as ids, never by name (privacy.py): the
+    # onboarded owner's `person.live_test` is `person.hm_...` here.
+    people = {eid for eid in states if eid.startswith("person.")}
+    hidden = {eid for eid in ids if re.fullmatch(r"person\.hm_[0-9a-f]{10}", eid)}
+    if len(hidden) != len(people):
+        problems.append(f"{len(people)} people in Home Assistant, {len(hidden)} person ids "
+                        f"in the inventory: {sorted(ids & people)[:5]}")
+    missing = sorted(states - ids - people)
     if missing:
         problems.append(f"{len(missing)} entities Home Assistant runs are not in the "
                         f"inventory: {missing[:8]}")

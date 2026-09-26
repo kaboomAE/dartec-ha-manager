@@ -63,6 +63,7 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `version.py` | Version comparison, and the agent's own running version (from HA's loader). No module-level HA imports, so CI can test it directly |
 | `registry_paging.py` | Filtering, counting and paging a registry listing, and `inventory_digest` (the hash the manager compares to decide whether its full entity list is stale). No HA imports |
 | `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
+| `privacy.py` | Household names never leave the home (#20): every snapshot and command reply is scrubbed in `cloud_link` so each household member's name becomes a stable id (`hm_` + 10 hex, an HMAC under a secret in `.storage/dartec_ha_manager.privacy`), and every inbound command has the ids turned back into names. Core has no HA imports; `tests/test_privacy.py`. The manager's copy is `server/app/household_privacy.py`, and the two must agree |
 | `household.py` | **"My Home"**, the homeowner's household panel: every rule about who may add, change, pause, reset or remove whom (owner, `dartec` and system accounts untouchable; always an active admin left; nobody changes their own role; only the owner sets another's password, as in HA itself). Plain functions over dicts, no HA imports, unit-tested in `tests/test_household.py` |
 | `household_ws.py` | Registers the "My Home" sidebar panel (`/dartec-household`, `require_admin`) and its admin-only websocket commands (`dartec_ha_manager/household/*`; `set_language` and `create`'s `language` since #49, the same rule as the first dashboard: yourself or a person here), applies `household.py` using HA's own auth, person and per-user frontend storage, writes the logbook ("done by") and a local activity list, and gives the snapshot its `household` counts. Refuses the agent's own loopback token. **No remote command reaches it** |
 | `user_prefs.py` | A person's own `language` (the whole locale) and `theme` in the frontend's per-user store, as room panels and My Home set them for someone else. No HA imports, unit-tested in `tests/test_user_prefs.py` |
@@ -307,6 +308,16 @@ check.
 ---
 
 ## 7. Gotchas
+
+**Privacy**
+- **Nothing reaches the manager except through `cloud_link`, and `cloud_link`
+  scrubs it** (`privacy.py`). A new outbound path (an HTTP post, a second
+  socket message type) must go through `Pseudonymiser.scrub` too, or it will
+  leak household names. The snapshot says `privacy: {"version": 1}`; the
+  manager refuses to send `hm_` ids to a home that does not.
+- A reply is scrubbed **once**, with the names before and after the command
+  merged (`merged`), because an inventory digest in it is folded with the
+  names and has to match the snapshot's.
 
 **Collector**
 - Entities inherit their area from their **device**. Reading only the entity
