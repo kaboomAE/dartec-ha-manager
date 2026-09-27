@@ -16,6 +16,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import privacy
 from .collector import collect_snapshot
 from .commands import execute_command
 from .const import (RECONNECT_MAX_S, RECONNECT_MIN_S, SIGNAL_SNAPSHOT_NOW,
@@ -80,6 +81,24 @@ class CloudLink:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, RECONNECT_MAX_S)
 
+    async def _outbound_snapshot(self) -> dict:
+        """The snapshot as the manager may see it: household names hidden.
+
+        If the names cannot be read, the manager gets the core section and
+        nothing else, rather than a snapshot that might name someone. The
+        home stays online; its detail returns with the next good snapshot.
+        """
+        snapshot = await collect_snapshot(self._hass)
+        try:
+            return (await privacy.async_filter(self._hass)).scrub_snapshot(snapshot)
+        except Exception as err:  # noqa: BLE001 — fail closed, never go dark
+            _LOGGER.warning("Could not hide household names, sending the core section only: %s",
+                            type(err).__name__)
+            return {"core": {k: v for k, v in (snapshot.get("core") or {}).items()
+                             if k != "location_name"},
+                    privacy.SNAPSHOT_KEY: {"version": privacy.PRIVACY_VERSION,
+                                           "degraded": True}}
+
     async def _snapshot_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         """Send a snapshot every cycle while handling server-pushed commands.
 
@@ -91,7 +110,7 @@ class CloudLink:
 
         async def sender() -> None:
             while not self._stopping:
-                snapshot = await collect_snapshot(self._hass)
+                snapshot = await self._outbound_snapshot()
                 async with send_lock:
                     await ws.send_json({"type": "snapshot", "data": snapshot})
                 self._nudge.clear()
@@ -106,11 +125,29 @@ class CloudLink:
                     break
                 data = msg.json()
                 if data.get("type") == "command":
-                    result = await execute_command(self._hass, data)
+                    # Household names travel as ids both ways (privacy.py):
+                    # the manager addresses a person or a phone by the id it
+                    # was given, and the answer is scrubbed with the names as
+                    # they stood before and after, in case the command
+                    # renamed or removed someone.
+                    try:
+                        before = await privacy.async_filter(self._hass)
+                    except Exception as err:  # noqa: BLE001 — refuse, never leak
+                        _LOGGER.warning("Could not read household names, command refused: %s",
+                                        type(err).__name__)
+                        result = {"ok": False, "reason": "privacy_unavailable",
+                                  "detail": "the home could not read its household names"}
+                    else:
+                        result = await execute_command(self._hass, before.reveal(data))
+                        try:
+                            both = before.merged(await privacy.async_filter(self._hass))
+                        except Exception:  # noqa: BLE001 — the names before still hide
+                            both = before
+                        result = both.scrub(result)
                     async with send_lock:
                         await ws.send_json({"type": "command_result", "id": data.get("id"), **result})
                     # push a fresh snapshot right away so the dashboard reflects the outcome
-                    snapshot = await collect_snapshot(self._hass)
+                    snapshot = await self._outbound_snapshot()
                     async with send_lock:
                         await ws.send_json({"type": "snapshot", "data": snapshot})
             raise aiohttp.ClientError("socket closed by server")
