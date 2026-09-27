@@ -142,7 +142,12 @@ def run_version(version: str, keep: bool, timeout: float) -> list[str]:
                             f"{DASHBOARD}")
         ours = [e.get("title") for e in snap.get("integrations") or []
                 if e.get("domain") == AGENT_DOMAIN]
-        if ours != ["Dartec: Live test / Integration rig"]:
+        # The rig's customer is called "Live test", like the owner the rig
+        # onboards, so the manager is sent that part as the owner's id
+        # (privacy.py, #20). What is checked here is the brand's spelling
+        # and that the retitle reached the snapshot.
+        if len(ours) != 1 or not re.fullmatch(
+                r"Dartec: hm_[0-9a-f]{10} / Integration rig", ours[0] or ""):
             problems.append(f"the snapshot's integration title is {ours}")
         misspelt = [f"{path}" for path in re.findall(r"Dar[ -]?Tec[^\"]*", json.dumps(
             {k: snap.get(k) for k in ("dashboards", "integrations", "branding")}))]
