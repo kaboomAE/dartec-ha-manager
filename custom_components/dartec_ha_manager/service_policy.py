@@ -141,12 +141,26 @@ SENSITIVE_ACTIONS = frozenset({
     # Reachability, and data destroyed in the house. `backup_upload` is
     # deliberately not here: data leaving the house is gated by the home's
     # offsite opt-in instead (see OPT_IN_ACTIONS below).
-    "tunnel_setup", "tunnel_stop",
+    "tunnel_stop",
     "link_setup", "link_stop",
     "backup_delete",
     # Add-ons are services in their own right.
     "addon_restart", "addon_start", "addon_stop",
 })
+
+# Actions this agent no longer performs at all, with the answer it gives.
+# Refused by name before consent is looked at: no window, commissioning or
+# standing opt-in brings one back. Reversing a retirement is a release.
+RETIRED_ACTIONS = {
+    # The owner's decision, 2026-09-27: Dartec Link replaces the Cloudflare
+    # tunnel. The tunnel published the home's login page on the internet,
+    # through whichever Cloudflare account the token in the command belonged
+    # to. `tunnel_status` and `tunnel_stop` remain, so an existing tunnel can
+    # still be found and taken down.
+    "tunnel_setup": ("Cloudflare tunnels are retired; Dartec Link replaces "
+                     "them. 'tunnel_status' and 'tunnel_stop' still work, to "
+                     "find and take down a tunnel this home already has."),
+}
 
 # `hacs_token_set` is deliberately NOT in the set above either: it is routine.
 # It replaces the GitHub token in a HACS entry that already exists, and that

@@ -44,8 +44,8 @@ field on an old one, follows the rules below. Code review checks them.
    routine.
 6. **Consent is checked at the moment of the action.** It is read from the home
    when the command arrives, never from the command. A command that spends
-   minutes installing before it changes anything (Dartec Link, the tunnel)
-   asks again right before the change (`maintenance.consent_ended`).
+   minutes installing before it changes anything (Dartec Link) asks again
+   right before the change (`maintenance.consent_ended`).
 7. **Only a Home Assistant administrator can grant consent.** The
    `allow_maintenance` service, the *Allow Dartec support* switch and turning
    *approved updates* back on all call `maintenance.require_admin`. Calls Home
@@ -60,6 +60,11 @@ field on an old one, follows the rules below. Code review checks them.
 9. **The default is to refuse, and to say so in the home's own logbook.** An
    unknown action, service or field is refused, and so is anything malformed,
    rather than repaired.
+10. **A capability that cannot be made safe is retired, not gated.** The
+    Cloudflare tunnel took a token that decided whose account the home was
+    published through, and nothing on the home could check it; Dartec Link
+    replaced it, so `tunnel_setup` is in `service_policy.RETIRED_ACTIONS` and
+    refused before consent is read.
 
 ## Adding a command
 

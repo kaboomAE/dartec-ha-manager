@@ -549,6 +549,33 @@ class TestHandlerRefusalsAreLogged:
         assert not any(line.startswith("Dartec ran") for line in lines)
 
 
+class TestTunnelSetupIsRetired:
+    """Dartec Link replaced the Cloudflare tunnel, whose token decided whose
+    account the home was published through (owner's decision, 2026-09-27)."""
+
+    @pytest.mark.parametrize("allowed", [False, True])
+    def test_refused_whatever_the_home_has_allowed(self, consent, monkeypatch, http,
+                                                   allowed):
+        consent(allowed)
+        monkeypatch.setenv("SUPERVISOR_TOKEN", "t")
+        lines = []
+        monkeypatch.setattr(maintenance, "logbook", lambda hass, message: lines.append(message))
+        session = http(FakeSession())
+        result = run(commands.execute_command(FakeHass(), {
+            "action": "tunnel_setup", "tunnel_token": "eyJhIjoiYXR0YWNrZXIifQ==",
+            "hostname": "home.attacker.example"}))
+        assert result.get("refused") is True and result.get("code") == "retired"
+        assert "Dartec Link" in result["detail"]
+        assert session.requests == []
+        assert lines and lines[-1].startswith("Refused remote command 'tunnel_setup'")
+
+    def test_the_handler_is_gone_and_status_and_stop_remain(self):
+        tunnel_cmds = _load("tunnel_cmds")
+        assert set(tunnel_cmds.HANDLERS) == {"tunnel_status", "tunnel_stop"}
+        assert not hasattr(tunnel_cmds, "tunnel_setup")
+        assert "tunnel_setup" not in service_policy.SENSITIVE_ACTIONS
+
+
 class TestAddonSlug:
     """The same class of bug in the add-on commands: the slug is a path."""
 

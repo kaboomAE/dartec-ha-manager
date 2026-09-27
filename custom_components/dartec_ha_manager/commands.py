@@ -34,7 +34,7 @@ from homeassistant.core import HomeAssistant
 from . import maintenance
 from .const import DOMAIN
 from .service_policy import (GUARDED_ACTIONS, GUARDED_WITHOUT_CONSENT,
-                             check_call_service, check_guarded,
+                             RETIRED_ACTIONS, check_call_service, check_guarded,
                              check_opt_in, check_own_entities, is_sensitive,
                              normalise_service_data)
 from .trust import ADDON_SLUG_RE, valid_id
@@ -100,6 +100,10 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         # which is what keeps "close" from becoming "extend".
         if action == "commissioning_complete":
             return maintenance.complete_commissioning(hass, "manager")
+        # Retired actions are refused before consent is even read: nothing
+        # the home has allowed can bring one back.
+        if action in RETIRED_ACTIONS:
+            return _refuse(hass, str(action), RETIRED_ACTIONS[action], code="retired")
 
         # Consent, not merely the switch: an interactive window, the
         # commissioning period that pairing opened, or a standing
