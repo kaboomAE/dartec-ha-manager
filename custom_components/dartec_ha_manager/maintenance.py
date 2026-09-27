@@ -568,8 +568,7 @@ def consent_ended(hass: HomeAssistant, action: str) -> dict | None:
     obeyed rather than overtaken."""
     if consent(hass)["allowed"]:
         return None
-    logbook(hass, f"Stopped remote command '{action}': consent from this home "
-                  "ended before it made its change")
+    # The dispatcher writes the refusal to the logbook (commands.py).
     return {"ok": False, "refused": True, "code": "consent",
             "detail": f"'{action}' stopped: consent from this home ended before "
                       "it made its change. Nothing was configured."}

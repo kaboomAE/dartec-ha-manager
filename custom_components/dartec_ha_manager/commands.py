@@ -33,11 +33,11 @@ from homeassistant.core import HomeAssistant
 
 from . import maintenance
 from .const import DOMAIN
-from .trust import ADDON_SLUG_RE, valid_id
 from .service_policy import (GUARDED_ACTIONS, GUARDED_WITHOUT_CONSENT,
                              check_call_service, check_guarded,
                              check_opt_in, check_own_entities, is_sensitive,
                              normalise_service_data)
+from .trust import ADDON_SLUG_RE, valid_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -199,6 +199,14 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         else:
             return {"ok": False, "detail": f"unsupported action '{action}'"}
 
+        if result.get("refused"):
+            # A handler turned down something in the command itself: a URL,
+            # an id, a size, or consent that ended while it worked. Logged as
+            # a refusal, never as something Dartec ran.
+            _LOGGER.warning("Refused %s: %s", action, result.get("detail"))
+            maintenance.logbook(hass, f"Refused remote command '{action}': "
+                                      f"{result.get('detail')}")
+            return result
         if guarded_run:
             maintenance.logbook(hass, f"Dartec ran '{action}' as an approved update "
                                       "(latest release, upgrade only), without the "

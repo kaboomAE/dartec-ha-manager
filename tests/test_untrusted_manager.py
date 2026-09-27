@@ -534,6 +534,21 @@ class TestAutomationId:
             "/api/config/automation/config/dartec_")
 
 
+class TestHandlerRefusalsAreLogged:
+
+    def test_a_refused_url_is_in_the_homes_logbook_not_reported_as_run(
+            self, consent, monkeypatch, http):
+        consent(True)
+        lines = []
+        monkeypatch.setattr(maintenance, "logbook", lambda hass, message: lines.append(message))
+        monkeypatch.setitem(sys.modules, "dartec_ha_manager.link_cmds", link_cmds)
+        result = run(commands.execute_command(FakeHass(), {
+            "action": "link_setup", "auth_key": "k", "login_server": "https://attacker.invalid"}))
+        assert result.get("refused") is True
+        assert lines and lines[-1].startswith("Refused remote command 'link_setup'")
+        assert not any(line.startswith("Dartec ran") for line in lines)
+
+
 class TestAddonSlug:
     """The same class of bug in the add-on commands: the slug is a path."""
 
