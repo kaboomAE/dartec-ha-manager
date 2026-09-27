@@ -33,9 +33,11 @@ from homeassistant.core import HomeAssistant
 
 from . import maintenance
 from .const import DOMAIN
+from .trust import ADDON_SLUG_RE, valid_id
 from .service_policy import (GUARDED_ACTIONS, GUARDED_WITHOUT_CONSENT,
                              check_call_service, check_guarded,
-                             check_opt_in, check_own_entities, is_sensitive)
+                             check_opt_in, check_own_entities, is_sensitive,
+                             normalise_service_data)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,9 +109,15 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         window_open = granted["allowed"]
 
         if action == "call_service":
+            # Checked and executed in one shape: every entity_id as the list of
+            # ids Home Assistant will act on, so what is authorised below is
+            # exactly what runs (GHSA-vj2g-mxcr-wx5r).
+            service_data, refusal = normalise_service_data(cmd.get("service_data") or {})
+            if refusal:
+                return _refuse(hass, _describe(cmd), refusal)
+            cmd = {**cmd, "service_data": service_data}
             refusal = (check_call_service(cmd, maintenance_open=window_open)
-                       or check_own_entities(cmd.get("service_data") or {},
-                                             _own_entity_ids(hass)))
+                       or check_own_entities(service_data, _own_entity_ids(hass)))
             if refusal:
                 return _refuse(hass, _describe(cmd), refusal)
             result = await _call_service(hass, cmd)
@@ -255,6 +263,10 @@ async def _addon_action(hass: HomeAssistant, slug: str, verb: str) -> dict:
         return {"ok": False, "detail": "No Supervisor on this install (Container/Core)"}
     if not slug:
         return {"ok": False, "detail": "addon_slug missing"}
+    # The slug becomes part of a Supervisor path. Unchecked, "../core" with
+    # "stop" is /core/stop: Home Assistant stopped, which no consent can allow.
+    if valid_id(slug, ADDON_SLUG_RE) is None:
+        return {"ok": False, "refused": True, "detail": f"refused addon_slug {slug!r}"}
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
     session = async_get_clientsession(hass)

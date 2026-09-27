@@ -102,6 +102,14 @@ async def tunnel_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         if install.get("status") != 200:
             return _fail(f"add-on install failed: {install.get('body')}")
 
+    # The install above can take minutes; consent is checked again at the
+    # moment the tunnel is configured.
+    from .maintenance import consent_ended
+
+    ended = consent_ended(hass, "tunnel_setup")
+    if ended:
+        return ended
+
     # `additional_hosts` stays untouched — a home may already publish other
     # services through this tunnel and clobbering that would break them.
     options = await _supervisor(hass, "POST", f"/addons/{slug}/options",

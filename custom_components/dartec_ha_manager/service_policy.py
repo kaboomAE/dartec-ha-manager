@@ -67,9 +67,9 @@ ROUTINE_SERVICES = frozenset({
     "light.turn_on", "light.turn_off", "light.toggle",
     "switch.turn_on", "switch.turn_off", "switch.toggle",
     "fan.turn_on", "fan.turn_off",
-    "scene.turn_on", "scene.reload",
+    "scene.reload",
     "script.reload",
-    "automation.reload", "automation.turn_on", "automation.turn_off",
+    "automation.reload",
     "backup.create",
     "input_boolean.turn_on", "input_boolean.turn_off",
     "persistent_notification.create", "persistent_notification.dismiss",
@@ -81,6 +81,14 @@ SENSITIVE_SERVICES = frozenset({
     "hassio.host_reboot",
     "hassio.addon_restart", "hassio.addon_start", "hassio.addon_stop",
     "recorder.purge", "recorder.purge_entities",
+    # A scene is a stored set of states, and an automation a stored set of
+    # service calls. Applying one, or switching one on or off, does whatever
+    # it holds — unlock, open, disarm — without any of those calls passing
+    # through this module, so each needs the same window as the calls it
+    # could stand in for (GHSA-4m4w-x5r5-hmvh, GHSA-rwhg-fxhq-m6pg). Reloading
+    # them only rereads configuration and stays routine.
+    "scene.turn_on",
+    "automation.turn_on", "automation.turn_off",
 })
 
 # Domains where every service is consequential enough to need a window.
@@ -395,19 +403,66 @@ def classify(domain: str, service: str) -> Tier:
     return "unlisted"
 
 
+# What an entity id may look like once Home Assistant has read it: lower case,
+# "domain.object_id". "all" is handled on its own (validate_target).
+ENTITY_ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+
+
+def _split(value: Any) -> list[str]:
+    """An ``entity_id`` value read the way Home Assistant reads it
+    (``cv.comp_entity_ids``): a string is a comma-separated list, and each
+    entry is stripped and lower-cased. List entries are split too, so nothing
+    Home Assistant could end up calling is hidden inside one entry."""
+    items = value if isinstance(value, (list, tuple)) else [value]
+    found: list[str] = []
+    for item in items:
+        found.extend(part.strip().lower() for part in str(item).split(","))
+    return found
+
+
 def _targets(service_data: dict[str, Any]) -> list[str]:
     """Every entity_id named in the payload, including inside a ``target``
-    block, flattened to a list of strings."""
+    block, as the separate ids Home Assistant would act on.
+
+    Comparing the raw string was not enough:
+    ``"light.safe,switch.allow_dartec_support"`` is one string here and two
+    entities to Home Assistant, which let the cloud switch on the home's own
+    consent switch (GHSA-vj2g-mxcr-wx5r)."""
     found: list[str] = []
     for holder in (service_data, service_data.get("target") or {}):
-        if not isinstance(holder, dict):
+        if not isinstance(holder, dict) or holder.get("entity_id") is None:
             continue
-        value = holder.get("entity_id")
-        if isinstance(value, str):
-            found.append(value)
-        elif isinstance(value, (list, tuple)):
-            found.extend(str(v) for v in value)
+        found.extend(_split(holder["entity_id"]))
     return found
+
+
+def normalise_service_data(service_data: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """(service_data with every ``entity_id`` rewritten as a plain list of
+    checked ids, None), or (None, refusal).
+
+    The call that runs is built from this, so Home Assistant is handed exactly
+    the list that was authorised, one id at a time, and never a string it
+    would parse differently. Anything that is not a plain entity id is refused
+    rather than repaired."""
+    if not isinstance(service_data, dict):
+        return None, "service_data must be an object"
+    clean = dict(service_data)
+    if isinstance(clean.get("target"), dict):
+        clean["target"] = dict(clean["target"])
+    for holder in (clean, clean.get("target")):
+        if not isinstance(holder, dict) or "entity_id" not in holder:
+            continue
+        value = holder["entity_id"]
+        if not isinstance(value, (str, list, tuple)) or (
+                isinstance(value, (list, tuple))
+                and not all(isinstance(v, str) for v in value)):
+            return None, f"malformed entity_id {value!r}"
+        ids = _split(value)
+        bad = [e for e in ids if e != "all" and not ENTITY_ID_RE.match(e)]
+        if bad:
+            return None, f"malformed entity_id {bad!r}"
+        holder["entity_id"] = ids
+    return clean, None
 
 
 # Keys by which Home Assistant targets entities without naming them. It
@@ -454,9 +509,9 @@ def check_call_service(cmd: dict[str, Any], *, maintenance_open: bool) -> str | 
     or None when the call may proceed."""
     domain = str(cmd.get("domain") or "").strip()
     service = str(cmd.get("service") or "").strip()
-    service_data = cmd.get("service_data") or {}
-    if not isinstance(service_data, dict):
-        return "service_data must be an object"
+    service_data, refusal = normalise_service_data(cmd.get("service_data") or {})
+    if refusal:
+        return refusal
 
     tier = classify(domain, service)
     pair = f"{domain}.{service}"

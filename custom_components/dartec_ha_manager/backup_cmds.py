@@ -15,6 +15,12 @@ Two independent layers, because they fail differently:
 The upload streams in chunks rather than reading the archive into memory:
 these files are routinely hundreds of megabytes and a home may be a
 Raspberry Pi with 2 GB of RAM.
+
+The upload goes only to the manager's own address (`trust.MANAGER_HOSTS`),
+over https, and never follows a redirect: the URL is in the command, and a
+home's whole configuration must not go wherever a compromised manager points
+it (GHSA-v9pc-vw88-p798). The backup and agent ids are checked before they
+are put into Home Assistant's download URL.
 """
 from __future__ import annotations
 
@@ -24,12 +30,16 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .trust import (BACKUP_AGENT_RE, BACKUP_ID_RE, MANAGER_HOSTS, bounded_mb,
+                    check_url, valid_id)
 from .ws_bridge import call_own_ws, mint_owner_token
 
 _LOGGER = logging.getLogger(__name__)
 
 UPLOAD_CHUNK = 1024 * 1024        # 1 MiB
 DEFAULT_MAX_UPLOAD_MB = 2048
+# The most the manager may ask for (its own API allows up to this).
+MAX_UPLOAD_MB = 4096
 
 
 def _has_supervisor() -> bool:
@@ -186,7 +196,19 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     upload_token = cmd.get("upload_token")
     if not (backup_id and upload_url and upload_token):
         return _fail("backup_id, upload_url and upload_token required")
-    max_mb = int(cmd.get("max_mb") or DEFAULT_MAX_UPLOAD_MB)
+    refusal = check_url(upload_url, MANAGER_HOSTS)
+    if refusal:
+        return {**_fail(f"refused upload_url: {refusal}"), "refused": True}
+    if valid_id(backup_id, BACKUP_ID_RE) is None:
+        return {**_fail(f"refused backup_id {backup_id!r}"), "refused": True}
+    agent_id = cmd.get("agent_id")
+    if agent_id is not None and valid_id(agent_id, BACKUP_AGENT_RE) is None:
+        return {**_fail(f"refused agent_id {agent_id!r}"), "refused": True}
+    max_mb = bounded_mb(cmd.get("max_mb"), DEFAULT_MAX_UPLOAD_MB, MAX_UPLOAD_MB)
+    if max_mb is None:
+        return {**_fail(f"refused max_mb {cmd.get('max_mb')!r}: it must be a whole "
+                        f"number of MB from 1 to {MAX_UPLOAD_MB}"), "refused": True}
+    max_bytes = max_mb * 1024 * 1024
 
     details = await call_own_ws(hass, {"type": "backup/details", "backup_id": backup_id})
     if not details.get("success"):
@@ -207,29 +229,44 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         return _fail(access)
     session = async_get_clientsession(hass)
     try:
-        agent_id = (cmd.get("agent_id")
-                    or next(iter((backup.get("agents") or {}).keys()), "backup.local"))
-        download = f"{base_url(hass, ws=False)}/api/backup/download/{backup_id}?agent_id={agent_id}"
-        async with session.get(download, ssl=False,
+        if agent_id is None:
+            # From Home Assistant's own answer, so checked all the same: it
+            # still ends up in a URL.
+            agent_id = next(iter((backup.get("agents") or {}).keys()), "backup.local")
+            if valid_id(agent_id, BACKUP_AGENT_RE) is None:
+                return _fail(f"unexpected backup location {agent_id!r}")
+        download = f"{base_url(hass, ws=False)}/api/backup/download/{backup_id}"
+        async with session.get(download, ssl=False, params={"agent_id": agent_id},
                               headers={"Authorization": f"Bearer {access}"},
                               timeout=3600) as src:
             if src.status != 200:
                 return _fail(f"could not read the backup from Home Assistant (HTTP {src.status})")
 
             # Stream straight through: read a chunk, write a chunk. The whole
-            # archive never sits in memory on either side.
+            # archive never sits in memory on either side. The limit is
+            # enforced on what is actually sent, since core backups declare
+            # no size up front.
             async def pump():
+                sent = 0
                 async for chunk in src.content.iter_chunked(UPLOAD_CHUNK):
+                    sent += len(chunk)
+                    if sent > max_bytes:
+                        raise ValueError(f"backup is over the {max_mb} MB limit "
+                                         "for offsite copies")
                     yield chunk
 
-            async with session.post(upload_url, data=pump(), timeout=7200, headers={
+            # No redirects: a streamed body cannot be replayed, and the only
+            # place this may go is the address checked above.
+            async with session.post(upload_url, data=pump(), timeout=7200,
+                                    allow_redirects=False, headers={
                 "X-Dartec-Token": upload_token,
                 "X-Dartec-Backup-Id": str(backup_id),
                 "X-Dartec-Backup-Name": str(backup.get("name") or backup_id)[:100],
                 "X-Dartec-Backup-Date": str(backup.get("date") or ""),
                 "Content-Type": "application/octet-stream",
             }) as dst:
-                body = await dst.text()
+                # The answer is a line of JSON; read no more than that.
+                body = (await dst.content.read(4096)).decode("utf-8", "replace")
                 if dst.status >= 300:
                     return _fail(f"upload rejected by the manager (HTTP {dst.status}): {body[:200]}")
                 # Report what was actually transferred, not what HA declared:

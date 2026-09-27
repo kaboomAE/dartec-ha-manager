@@ -107,9 +107,26 @@ async def automation_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if refusal:
         return {"ok": False, "detail": refusal}
 
+    from .trust import AUTOMATION_ID_RE, valid_id
     from .ws_bridge import call_own_rest
 
-    automation_id = str(config.pop("id", "") or "").strip() or f"dartec_{uuid.uuid4().hex[:12]}"
+    # The id becomes part of a REST path, so it is checked against a pattern
+    # with no "/", "." or "%" before it goes anywhere near one. Unchecked, an
+    # id of "../../../services/homeassistant/stop" reached Home Assistant's
+    # service route with an owner token, past every rule in service_policy.py
+    # (GHSA-qj62-wg85-79cv).
+    requested = config.get("id")
+    if isinstance(requested, int) and not isinstance(requested, bool):
+        requested = str(requested)         # Home Assistant's own ids are digits
+    if requested in (None, ""):
+        automation_id = f"dartec_{uuid.uuid4().hex[:12]}"
+    elif valid_id(requested, AUTOMATION_ID_RE) is None:
+        return {"ok": False, "refused": True,
+                "detail": f"refused automation id {requested!r}: letters, digits, "
+                          "'_' and '-' only, up to 64"}
+    else:
+        automation_id = requested
+    config.pop("id", None)
     result = await call_own_rest(hass, "POST",
                                  f"/api/config/automation/config/{automation_id}", config)
     if not result.get("ok"):
