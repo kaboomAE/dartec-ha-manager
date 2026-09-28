@@ -39,6 +39,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .trust import LINK_HOSTS, canonical_login_server
+
 _LOGGER = logging.getLogger(__name__)
 
 SUPERVISOR_URL = "http://supervisor"
@@ -166,11 +168,22 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     The key is single-use and expires within the hour, so this is not a retry
     loop: if it fails, the manager mints a new one and calls again.
     """
-    auth_key = (cmd.get("auth_key") or "").strip()
-    login_server = (cmd.get("login_server") or "").strip()
-    node_name = (cmd.get("node_name") or "").strip().lower()
-    if not auth_key or not login_server:
+    auth_key = cmd.get("auth_key")
+    auth_key = auth_key.strip() if isinstance(auth_key, str) else ""
+    node_name = cmd.get("node_name")
+    node_name = node_name.strip().lower() if isinstance(node_name, str) else ""
+    if not auth_key or not cmd.get("login_server"):
         return _fail("auth_key and login_server required")
+    # Which control plane this home joins is decided here, not by the
+    # command: a compromised manager could otherwise enrol the home in a mesh
+    # it runs, and stopping the add-on does not undo that at the far end
+    # (GHSA-hrm5-cvxj-cc7w). What the add-on is given is rebuilt from the
+    # allowlist, never copied from the command.
+    login_server = canonical_login_server(cmd.get("login_server"))
+    if login_server is None:
+        return {**_fail(f"refused login_server {cmd.get('login_server')!r}: Dartec Link "
+                        f"joins only {', '.join(sorted(LINK_HOSTS))}, over https"),
+                "refused": True}
     if not os.environ.get("SUPERVISOR_TOKEN"):
         return _fail("this home has no Supervisor (Container/Core install), "
                      "so the Dartec Link add-on cannot be installed")
@@ -262,6 +275,13 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         # promise than "Dartec can reach Home Assistant".
         "advertise_routes": [],
     }
+    # The install above can take minutes; consent is checked again at the
+    # moment the home is actually enrolled.
+    from .maintenance import consent_ended
+
+    ended = consent_ended(hass, "link_setup")
+    if ended:
+        return ended
     configured = await _supervisor(hass, "POST", f"/addons/{slug}/options",
                                    {"options": options})
     if configured.get("status") != 200:

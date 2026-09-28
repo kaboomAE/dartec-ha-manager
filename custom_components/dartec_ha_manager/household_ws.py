@@ -35,6 +35,7 @@ Neither leaves the house.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -77,6 +78,7 @@ ROOM_DASHBOARD_PREFIX = "dartec-room-"
 _DATA = "_household"
 _WS_REGISTERED = "_household_ws_registered"
 _STATIC_REGISTERED = "_household_static_registered"
+_MUTATION_LOCK = "_household_mutation_lock"
 
 
 class HouseholdStore:
@@ -101,6 +103,31 @@ class HouseholdStore:
 
 def _data(hass: HomeAssistant) -> HouseholdStore | None:
     return hass.data.get(DOMAIN, {}).get(_DATA)
+
+
+def _mutation_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """One lock per Home Assistant for every change that can alter who
+    manages the home.
+
+    The last-administrator rule is checked against a list of users read
+    moments earlier. Without a lock, two administrators removing or demoting
+    each other at once both passed it against the same list, and the home was
+    left with nobody who could manage it (GHSA-cvj4-75mr-7858). Held from
+    reading the users until the change is made, so each change is checked
+    against the one before it.
+    """
+    store = hass.data.setdefault(DOMAIN, {})
+    lock = store.get(_MUTATION_LOCK)
+    if lock is None:
+        lock = store[_MUTATION_LOCK] = asyncio.Lock()
+    return lock
+
+
+def _fresh_actor(connection, users: list[dict]) -> dict:
+    """The person making the change, as they are now rather than when their
+    connection opened: someone removed a moment ago manages nothing."""
+    return next((u for u in users if u["id"] == connection.user.id),
+                {**user_dict(connection.user), "is_active": False, "group_ids": []})
 
 
 async def async_setup(hass: HomeAssistant) -> None:
@@ -403,8 +430,13 @@ async def ws_create(hass: HomeAssistant, connection, msg: dict) -> None:
     data = _gate(hass, connection, msg)
     if data is None:
         return
-    actor = user_dict(connection.user)
+    async with _mutation_lock(hass):
+        await _create(hass, connection, msg, data)
+
+
+async def _create(hass: HomeAssistant, connection, msg: dict, data: HouseholdStore) -> None:
     users = await _users(hass)
+    actor = _fresh_actor(connection, users)
     try:
         clean = rules.check_create(actor, users, msg)
         first = rules.clean_dashboard(msg.get("dashboard"),
@@ -491,8 +523,13 @@ async def ws_update(hass: HomeAssistant, connection, msg: dict) -> None:
     data = _gate(hass, connection, msg)
     if data is None:
         return
-    actor = user_dict(connection.user)
+    async with _mutation_lock(hass):
+        await _update(hass, connection, msg, data)
+
+
+async def _update(hass: HomeAssistant, connection, msg: dict, data: HouseholdStore) -> None:
     users = await _users(hass)
+    actor = _fresh_actor(connection, users)
     changes = {k: msg[k] for k in ("name", "role", "local_only", "is_active") if k in msg}
     try:
         clean = rules.check_update(actor, users, msg["user_id"], changes, data.guests)
@@ -581,8 +618,13 @@ async def ws_remove(hass: HomeAssistant, connection, msg: dict) -> None:
     data = _gate(hass, connection, msg)
     if data is None:
         return
-    actor = user_dict(connection.user)
+    async with _mutation_lock(hass):
+        await _remove(hass, connection, msg, data)
+
+
+async def _remove(hass: HomeAssistant, connection, msg: dict, data: HouseholdStore) -> None:
     users = await _users(hass)
+    actor = _fresh_actor(connection, users)
     try:
         target = rules.check_remove(actor, users, msg["user_id"])
     except rules.Refused as err:

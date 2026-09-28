@@ -482,13 +482,40 @@ def close_window(hass: HomeAssistant) -> dict:
     return status(hass)
 
 
+async def require_admin(hass: HomeAssistant, context) -> None:
+    """Refuse to *grant* Dartec anything unless an administrator asked.
+
+    Consent is the home's to give, and in a home that means whoever manages
+    it: a Home Assistant administrator. Without this, any signed-in account
+    (a guest, a child, a room panel's login) could open the maintenance
+    window with a service call or the switch (GHSA-qx58-m2pf-8388). Calls
+    Home Assistant makes itself carry no user and are let through, as Home
+    Assistant's own admin-only services do: an automation that opens the
+    window was written by an administrator.
+
+    Taking access away is deliberately not gated: anyone in the house may
+    switch Dartec off, only an administrator may switch it on.
+    """
+    user_id = getattr(context, "user_id", None)
+    if user_id is None:
+        return
+    from homeassistant.exceptions import Unauthorized
+
+    user = await hass.auth.async_get_user(user_id)
+    if user is None or not user.is_active or not user.is_admin:
+        logbook(hass, "Refused a request to allow Dartec support: only someone "
+                      "who manages this home can allow it")
+        raise Unauthorized(context=context)
+
+
 async def async_register_services(hass: HomeAssistant) -> None:
-    """Register the two homeowner-facing services, once per HA instance."""
+    """Register the homeowner-facing services, once per HA instance."""
     store = _store(hass)
     if store.get(_REGISTERED_KEY):
         return
 
     async def _allow(call: ServiceCall) -> None:
+        await require_admin(hass, call.context)
         open_window(hass, call.data.get("minutes", DEFAULT_MINUTES))
 
     async def _end(call: ServiceCall) -> None:
@@ -530,6 +557,21 @@ def request_window(hass: HomeAssistant, reason: str = "") -> dict:
     logbook(hass, f"Dartec support requested a maintenance window. {reason}".strip())
     return {"ok": True, "detail": "the homeowner has been asked to open a window",
             **status(hass)}
+
+
+def consent_ended(hass: HomeAssistant, action: str) -> dict | None:
+    """A refusal if consent has ended since `action` was accepted, else None.
+
+    Consent is decided when a command arrives, but a few commands spend
+    minutes installing before they change anything. They ask again right
+    before the change, so a homeowner who switches Dartec off meanwhile is
+    obeyed rather than overtaken."""
+    if consent(hass)["allowed"]:
+        return None
+    # The dispatcher writes the refusal to the logbook (commands.py).
+    return {"ok": False, "refused": True, "code": "consent",
+            "detail": f"'{action}' stopped: consent from this home ended before "
+                      "it made its change. Nothing was configured."}
 
 
 def entry_options(hass: HomeAssistant) -> dict:

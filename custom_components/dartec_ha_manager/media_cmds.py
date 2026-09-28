@@ -15,10 +15,16 @@ filesystem. `media_dirs` is configurable, HAOS and Container disagree about
 where `/media` is, and HA validates the filename and content type. Writing the
 path ourselves would be guessing at all three.
 
-Three guards, enforced here rather than trusted from the cloud:
+Four guards, enforced here rather than trusted from the cloud:
 
+* the file comes only from the manager's own address (`trust.MANAGER_HOSTS`),
+  over https, and a redirect is followed only to another such address: the
+  URL is in the command, so without this a compromised manager could make
+  every home fetch from its own network (GHSA-mqpf-x42g-g28w)
 * one folder, `dartec/` — a customer's own media is out of reach
-* a size cap, checked while streaming, so a wrong URL cannot fill a disk
+* a size cap, checked while streaming, so a wrong URL cannot fill a disk or
+  memory. The command may ask for a lower cap, never a higher one
+  (GHSA-88r5-5vxg-53px)
 * a SHA-256 the server states up front and this verifies before uploading
 
 Nothing here deletes. There is no path to remove a file from a home.
@@ -32,6 +38,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
+from .trust import (MANAGER_HOSTS, MAX_REDIRECTS, REDIRECT_STATUSES, bounded_mb,
+                    check_url, redirect_target)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,10 +87,20 @@ async def media_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     url, token = cmd.get("download_url"), cmd.get("download_token")
     if not (url and token):
         return {"ok": False, "detail": "download_url and download_token required"}
+    # Before anything else touches the network: the URL came off the wire.
+    refusal = check_url(url, MANAGER_HOSTS)
+    if refusal:
+        return {"ok": False, "refused": True,
+                "detail": f"refused download_url: {refusal}"}
     expected = (cmd.get("sha256") or "").lower()
     if not re.fullmatch(r"[0-9a-f]{64}", expected):
         return {"ok": False, "detail": "a sha256 of the file is required"}
-    max_bytes = int(cmd.get("max_mb") or DEFAULT_MAX_MB) * 1024 * 1024
+    max_mb = bounded_mb(cmd.get("max_mb"), DEFAULT_MAX_MB, DEFAULT_MAX_MB)
+    if max_mb is None:
+        return {"ok": False, "refused": True,
+                "detail": f"refused max_mb {cmd.get('max_mb')!r}: it must be a whole "
+                          f"number of MB from 1 to {DEFAULT_MAX_MB}"}
+    max_bytes = max_mb * 1024 * 1024
 
     # Already there? Uploading again would be a wasted transfer per home and,
     # once a blueprint is pointing at the file, a needless rewrite of something
@@ -97,19 +116,38 @@ async def media_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     session = async_get_clientsession(hass)
     payload = bytearray()
     digest = hashlib.sha256()
+    too_big = {"ok": False,
+               "detail": f"{filename} is larger than {max_mb} MB; "
+                         "refusing before it reaches the disk"}
     try:
-        async with session.get(url, headers={"X-Dartec-Token": token},
-                               timeout=aiohttp.ClientTimeout(total=600)) as resp:
-            if resp.status != 200:
-                return {"ok": False,
-                        "detail": f"the manager returned HTTP {resp.status} for {filename}"}
-            async for chunk in resp.content.iter_chunked(CHUNK):
-                payload += chunk
-                digest.update(chunk)
-                if len(payload) > max_bytes:
+        # Redirects are followed by hand so each hop is checked like the
+        # first URL; aiohttp would follow them anywhere.
+        for _hop in range(MAX_REDIRECTS + 1):
+            async with session.get(url, headers={"X-Dartec-Token": token},
+                                   allow_redirects=False,
+                                   timeout=aiohttp.ClientTimeout(total=600)) as resp:
+                if resp.status in REDIRECT_STATUSES:
+                    url, refusal = redirect_target(url, resp.headers.get("Location"),
+                                                   MANAGER_HOSTS)
+                    if refusal:
+                        return {"ok": False, "refused": True,
+                                "detail": f"could not fetch {filename}: {refusal}"}
+                    continue
+                if resp.status != 200:
                     return {"ok": False,
-                            "detail": f"{filename} is larger than {max_bytes // 1024 // 1024} MB; "
-                                      "refusing before it reaches the disk"}
+                            "detail": f"the manager returned HTTP {resp.status} for {filename}"}
+                if (resp.content_length or 0) > max_bytes:
+                    return too_big
+                async for chunk in resp.content.iter_chunked(CHUNK):
+                    # Checked before the chunk is kept, so memory never holds
+                    # more than the cap.
+                    if len(payload) + len(chunk) > max_bytes:
+                        return too_big
+                    payload += chunk
+                    digest.update(chunk)
+                break
+        else:
+            return {"ok": False, "detail": f"could not fetch {filename}: too many redirects"}
     except Exception as err:                                       # noqa: BLE001
         return {"ok": False, "detail": f"could not fetch {filename}: {err}"}
 

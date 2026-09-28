@@ -1,10 +1,15 @@
-"""Cloudflare Tunnel setup on the customer's home (HA OS / Supervised only).
+"""The Cloudflare tunnel on a customer's home: finding it, and taking it down.
 
-Gives a home a public hostname without opening a router port: the community
-`cloudflared` add-on dials out to Cloudflare and traffic arrives through the
-tunnel. The manager creates the tunnel and DNS record on Cloudflare's side and
-passes the tunnel token here; this module installs, configures and starts the
-add-on via the Supervisor API.
+**Setting one up is retired** (0.24.0, the owner's decision, 2026-09-27).
+Dartec Link (link_cmds.py) replaces it: the tunnel gave a house a public
+hostname with a Home Assistant login page on the open internet, and the
+tunnel token the manager sent decided whose Cloudflare account the house was
+published through, which nothing on the home could check. `tunnel_setup` is
+refused by name (service_policy.RETIRED_ACTIONS), whatever consent the home
+has given.
+
+What is left only reads or takes away: `tunnel_status` finds a cloudflared
+add-on a home may still run from before, and `tunnel_stop` stops it.
 
 Deliberately does NOT support Container/Core installs: those have no
 Supervisor, so there is no add-on to install, and quietly doing something
@@ -21,7 +26,6 @@ from homeassistant.core import HomeAssistant
 _LOGGER = logging.getLogger(__name__)
 
 SUPERVISOR_URL = "http://supervisor"
-CLOUDFLARED_REPO = "https://github.com/brenner-tobias/addon-cloudflared"
 CLOUDFLARED_SLUG_SUFFIX = "_cloudflared"
 
 
@@ -74,51 +78,6 @@ async def tunnel_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             "detail": f"cloudflared {addon.get('state')}"}
 
 
-async def tunnel_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
-    """Install (if needed), configure with the manager-supplied tunnel token,
-    and start the cloudflared add-on."""
-    token = (cmd.get("tunnel_token") or "").strip()
-    hostname = (cmd.get("hostname") or "").strip().lower()
-    if not token or not hostname:
-        return _fail("tunnel_token and hostname required")
-    if not os.environ.get("SUPERVISOR_TOKEN"):
-        return _fail("this home has no Supervisor (Container/Core install), "
-                     "so the cloudflared add-on cannot be installed")
-
-    addon = await _find_addon(hass)
-    if addon is None:
-        added = await _supervisor(hass, "POST", "/store/repositories",
-                                  {"repository": CLOUDFLARED_REPO})
-        if added.get("status") not in (200, 400):   # 400 = already added
-            return _fail(f"could not add the cloudflared add-on repository: {added.get('body')}")
-        await _supervisor(hass, "POST", "/store/reload", timeout=120)
-        addon = await _find_addon(hass)
-        if addon is None:
-            return _fail("cloudflared add-on not found after adding its repository")
-
-    slug = addon["slug"]
-    if not addon.get("version"):        # not installed yet
-        install = await _supervisor(hass, "POST", f"/store/addons/{slug}/install", timeout=600)
-        if install.get("status") != 200:
-            return _fail(f"add-on install failed: {install.get('body')}")
-
-    # `additional_hosts` stays untouched — a home may already publish other
-    # services through this tunnel and clobbering that would break them.
-    options = await _supervisor(hass, "POST", f"/addons/{slug}/options",
-                                {"options": {"external_hostname": hostname,
-                                             "tunnel_token": token}})
-    if options.get("status") != 200:
-        return _fail(f"add-on configuration failed: {options.get('body')}")
-
-    action = "restart" if addon.get("state") == "started" else "start"
-    started = await _supervisor(hass, "POST", f"/addons/{slug}/{action}", timeout=300)
-    if started.get("status") != 200:
-        return _fail(f"add-on {action} failed: {started.get('body')}")
-
-    return {"ok": True, "hostname": hostname,
-            "detail": f"cloudflared configured for {hostname} and {action}ed"}
-
-
 async def tunnel_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     addon = await _find_addon(hass)
     if addon is None:
@@ -129,5 +88,4 @@ async def tunnel_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     return {"ok": True, "detail": "cloudflared stopped; the public hostname is now offline"}
 
 
-HANDLERS = {"tunnel_status": tunnel_status, "tunnel_setup": tunnel_setup,
-            "tunnel_stop": tunnel_stop}
+HANDLERS = {"tunnel_status": tunnel_status, "tunnel_stop": tunnel_stop}

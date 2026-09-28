@@ -34,9 +34,11 @@ install rather than a number somebody remembered to update in two places.
   - **Never** — `shell_command`, `python_script`, `hassio.addon_stdin`,
     `hassio.host_shutdown` and `homeassistant.stop` are permanently blocked and
     no permission you grant can unlock them.
-  - **Sensitive** — locks, covers, alarm, climate, reboots, deleting backups and
-    account changes need your consent, given on your own Home Assistant. It can come
-    from three places, and support can ask for it but never grant itself any:
+  - **Sensitive** — locks, covers, alarm, climate, scenes, switching
+    automations on or off, reboots, deleting backups and account changes need
+    your consent, given on your own Home Assistant by one of its
+    administrators. It can come from three places, and support can ask for it
+    but never grant itself any:
     - **Commissioning.** Pairing opens it, because whoever paired the home was
       standing in it with its pairing token. It lasts until the install is
       marked complete — by calling `dartec_ha_manager.complete_commissioning`,
@@ -50,6 +52,8 @@ install rather than a number somebody remembered to update in two places.
       `dartec_ha_manager.allow_maintenance`) opens a window that ends on its
       own and on every restart. The switch reads *on* while commissioning is
       open too, and its `commissioning_ends_at` attribute says until when.
+      Only an administrator can switch it on (or turn approved updates back
+      on); anyone signed in can switch either off.
     - **Unattended support**, an opt-in in this integration's options, off
       unless you turn it on.
 
@@ -96,6 +100,11 @@ install rather than a number somebody remembered to update in two places.
 - Calls that would target the whole house at once (`entity_id: all`, or no
   target at all) are refused, as are calls that target by area, device, floor
   or label, and calls on this integration's own switches: those are yours.
+- The agent does not trust the manager, so a compromised manager is not a
+  compromised home: backup copies go to, and files come from, only
+  `manager.dartec.ae` over https; Dartec Link joins only
+  `headscale.dartec.ae`; every size and id in a command is checked before it
+  is used. The rules are in [the trust boundary](docs/trust-boundary.md).
 - Every command executed or refused is written to **your own logbook**, so the
   record of what Dartec did in your home lives in your system, not only ours.
 - Admin credentials never leave the home, and no long-lived Home Assistant

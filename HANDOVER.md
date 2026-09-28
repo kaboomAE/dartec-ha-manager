@@ -1,7 +1,7 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.23.0 in `manifest.json`, released 2026-09-20
+**Current version**: 0.24.0 in `manifest.json`, released 2026-09-28
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
@@ -57,9 +57,10 @@ Everything lives in `custom_components/dartec_ha_manager/`.
 | `hacs_token.py` | The GitHub token in HACS's config entry: its fingerprint for the snapshot, and `hacs_token_set`. No HA imports |
 | `home_cmds.py` | Themes, branding, agent self-update, HA restart |
 | `backup_cmds.py` | Backup list/create/delete/schedule, and upload to Dartec storage |
-| `tunnel_cmds.py` | Cloudflare tunnel setup on the home |
+| `tunnel_cmds.py` | The Cloudflare tunnel: `tunnel_status` and `tunnel_stop` only, to find and take down one a home still has. **Setting one up is retired** (0.24.0, owner's decision 2026-09-27: Dartec Link replaces it); `tunnel_setup` is refused by name through `service_policy.RETIRED_ACTIONS` |
 | `branding.py` | Installer branding in the sidebar and tab title, plus its config endpoint |
 | `ha_update.py` | Guarded Core/OS updates: backup, update, resume after restart, health check, rollback, restore. The job lives in a `Store` and is reported in `snapshot.ha_update`. Its policy (`GUARDED_ACTIONS`, the opt-out) is in `service_policy.py` |
+| `trust.py` | **What the agent accepts from the manager**: the fixed host allowlists (`MANAGER_HOSTS`, `LINK_HOSTS`), `check_url` and hand-followed redirects, the id patterns for anything put into a path, and `bounded_mb`. No HA imports. The rules it serves are in [docs/trust-boundary.md](docs/trust-boundary.md); read that before adding a command |
 | `version.py` | Version comparison, and the agent's own running version (from HA's loader). No module-level HA imports, so CI can test it directly |
 | `registry_paging.py` | Filtering, counting and paging a registry listing, and `inventory_digest` (the hash the manager compares to decide whether its full entity list is stale). No HA imports |
 | `registry_access.py` | Enumerating the device registry in a way that works on both its pre- and post-2026.9 shapes. No HA imports |
@@ -246,7 +247,7 @@ floor_upsert, floor_delete, area_upsert, area_delete,
 devices_assign, entities_assign,
 users_list, user_create, user_update, user_set_password, user_delete,
 agent_update, ha_restart,
-tunnel_status, tunnel_setup, tunnel_stop,
+tunnel_status, tunnel_setup, tunnel_stop,   (tunnel_setup retired in 0.24.0)
 backup_list, backup_create, backup_delete, backup_schedule, backup_upload
 ```
 
@@ -434,6 +435,7 @@ check.
 | 0.21.2 | `www/dashboard-fix.js` carries `home_custom_cards` through Dwains' dashboard and view strategy generators, so Home custom cards saved in Dwains' settings show after a reload (upstream dwains-dashboard-next#20; reproduced with only Dwains installed). Released 2026-09-19 |
 | 0.23.0 | **Room panels** (Phase 3 of the planner-manager integration). `panel_setup` (sensitive), `panel_update`, `panel_remove`, `panel_status` (routine) for `panel-<slug>` accounts: non-admin, local-only, first dashboard = the room's dashboard, every other sidebar entry hidden (`panels.py`, `panel_cmds.py`, §6). Snapshot gains `panels` and `core.language`. My Home: kind `panel`, not a member, not counted, not changeable, one read-only line, `panel-` reserved; `dartec-room-*` dashboards never offered. Arabic strings added unreviewed, like the rest of `ar.json`. New CI job `live-panels`. Released 2026-09-20 |
 | 0.22.0 | **Area ids and per-device presence in the snapshot** (#37). Device and entity rows carry `area_id` beside `area` (the name stays for older managers). Device rows gain `available` (the `device_offline` rule without the alerting exclusions, so a device labelled expected-offline still reports `false`; `null` when nothing on it can be judged) and `last_seen` (latest `last_updated` among its running entities). The inventory digest is unchanged. The manager compares room pairs by area id when present (dartec-ha-manager-server#36). Released 2026-09-19 |
+| 0.24.0 | **The manager is not trusted** (security release, 2026-09-28; GHSA-vj2g-mxcr-wx5r, GHSA-4m4w-x5r5-hmvh, GHSA-rwhg-fxhq-m6pg, GHSA-v9pc-vw88-p798, GHSA-qj62-wg85-79cv, GHSA-mqpf-x42g-g28w, GHSA-88r5-5vxg-53px, GHSA-cvj4-75mr-7858, GHSA-qx58-m2pf-8388, GHSA-hrm5-cvxj-cc7w). Backup uploads and media downloads go only to `manager.dartec.ae` over https, with redirects refused (uploads) or re-checked hop by hop (downloads); Dartec Link joins only `https://headscale.dartec.ae`, rebuilt from the allowlist; media size capped at 20 MB and backup size at 4096 MB whatever the command asks, enforced on the bytes; automation ids, add-on slugs and backup ids checked against strict patterns before they reach a path; `entity_id` targets split as Home Assistant splits them, each entry checked, and the call made with the checked list (it now reaches HA as a list); `scene.turn_on` and `automation.turn_on`/`turn_off` sensitive; only an administrator can grant consent (the service, the support switch, approved updates back on), anyone can withdraw it; household create/update/remove serialised so the last administrator cannot be removed by two at once; Link setup re-checks consent after installing. **`tunnel_setup` retired** (owner, 2026-09-27; Dartec Link replaces it): refused by name with `code: "retired"` before consent is read (`service_policy.RETIRED_ACTIONS`); `tunnel_status` and `tunnel_stop` remain. `trust.py`, `docs/trust-boundary.md`, `tests/test_untrusted_manager.py` (one regression per advisory) |
 
 ---
 

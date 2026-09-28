@@ -136,7 +136,7 @@ class TestTargeting:
 
 class TestSensitiveActions:
     @pytest.mark.parametrize("action", [
-        "user_create", "user_set_password", "user_delete", "tunnel_setup",
+        "user_create", "user_set_password", "user_delete", "link_setup", "tunnel_stop",
     ])
     def test_account_and_infrastructure_actions_are_gated(self, action):
         """These hand over standing access, so they belong behind the window

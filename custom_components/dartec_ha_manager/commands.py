@@ -34,8 +34,10 @@ from homeassistant.core import HomeAssistant
 from . import maintenance
 from .const import DOMAIN
 from .service_policy import (GUARDED_ACTIONS, GUARDED_WITHOUT_CONSENT,
-                             check_call_service, check_guarded,
-                             check_opt_in, check_own_entities, is_sensitive)
+                             RETIRED_ACTIONS, check_call_service, check_guarded,
+                             check_opt_in, check_own_entities, is_sensitive,
+                             normalise_service_data)
+from .trust import ADDON_SLUG_RE, valid_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,6 +100,10 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         # which is what keeps "close" from becoming "extend".
         if action == "commissioning_complete":
             return maintenance.complete_commissioning(hass, "manager")
+        # Retired actions are refused before consent is even read: nothing
+        # the home has allowed can bring one back.
+        if action in RETIRED_ACTIONS:
+            return _refuse(hass, str(action), RETIRED_ACTIONS[action], code="retired")
 
         # Consent, not merely the switch: an interactive window, the
         # commissioning period that pairing opened, or a standing
@@ -107,9 +113,15 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         window_open = granted["allowed"]
 
         if action == "call_service":
+            # Checked and executed in one shape: every entity_id as the list of
+            # ids Home Assistant will act on, so what is authorised below is
+            # exactly what runs (GHSA-vj2g-mxcr-wx5r).
+            service_data, refusal = normalise_service_data(cmd.get("service_data") or {})
+            if refusal:
+                return _refuse(hass, _describe(cmd), refusal)
+            cmd = {**cmd, "service_data": service_data}
             refusal = (check_call_service(cmd, maintenance_open=window_open)
-                       or check_own_entities(cmd.get("service_data") or {},
-                                             _own_entity_ids(hass)))
+                       or check_own_entities(service_data, _own_entity_ids(hass)))
             if refusal:
                 return _refuse(hass, _describe(cmd), refusal)
             result = await _call_service(hass, cmd)
@@ -191,6 +203,14 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
         else:
             return {"ok": False, "detail": f"unsupported action '{action}'"}
 
+        if result.get("refused"):
+            # A handler turned down something in the command itself: a URL,
+            # an id, a size, or consent that ended while it worked. Logged as
+            # a refusal, never as something Dartec ran.
+            _LOGGER.warning("Refused %s: %s", action, result.get("detail"))
+            maintenance.logbook(hass, f"Refused remote command '{action}': "
+                                      f"{result.get('detail')}")
+            return result
         if guarded_run:
             maintenance.logbook(hass, f"Dartec ran '{action}' as an approved update "
                                       "(latest release, upgrade only), without the "
@@ -255,6 +275,10 @@ async def _addon_action(hass: HomeAssistant, slug: str, verb: str) -> dict:
         return {"ok": False, "detail": "No Supervisor on this install (Container/Core)"}
     if not slug:
         return {"ok": False, "detail": "addon_slug missing"}
+    # The slug becomes part of a Supervisor path. Unchecked, "../core" with
+    # "stop" is /core/stop: Home Assistant stopped, which no consent can allow.
+    if valid_id(slug, ADDON_SLUG_RE) is None:
+        return {"ok": False, "refused": True, "detail": f"refused addon_slug {slug!r}"}
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
     session = async_get_clientsession(hass)

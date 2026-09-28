@@ -120,6 +120,8 @@ class MaintenanceSwitch(SwitchEntity):
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs) -> None:
+        # Granting consent: administrators only (maintenance.require_admin).
+        await maintenance.require_admin(self.hass, self._context)
         maintenance.open_window(self.hass, maintenance.DEFAULT_MINUTES)
         self.async_write_ha_state()
 
@@ -173,6 +175,9 @@ class GuardedUpdatesSwitch(SwitchEntity):
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs) -> None:
+        # Letting Dartec install updates is consent too; turning it off is
+        # open to anyone, like the support switch.
+        await maintenance.require_admin(self.hass, self._context)
         await self._set(True)
 
     async def async_turn_off(self, **kwargs) -> None:

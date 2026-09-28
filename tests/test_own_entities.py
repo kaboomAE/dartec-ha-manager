@@ -96,7 +96,8 @@ def test_an_ordinary_switch_still_works():
                              _entity("switch.porch", "tplink")])
     result = _run(hass, switch_on("switch.porch"), registry)
     assert result["ok"] is True
-    assert hass.calls == [("switch", "turn_on", {"entity_id": "switch.porch"})]
+    # Handed on as the list that was checked (GHSA-vj2g-mxcr-wx5r).
+    assert hass.calls == [("switch", "turn_on", {"entity_id": ["switch.porch"]})]
 
 
 def test_an_area_cannot_carry_the_switch_in():
