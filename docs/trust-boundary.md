@@ -41,6 +41,9 @@ field on an old one, follows the rules below. Code review checks them.
    A scene applies stored states and an automation runs stored service calls,
    so applying a scene or switching an automation on or off is *sensitive*,
    like the lock or alarm call it could stand in for. Reloading them is
+   routine. The same goes for switches and toggle helpers (`switch.*`,
+   `input_boolean.*`): a switch may be a door strike or a valve, and a toggle
+   helper is how a home tells its automations something. Lights and fans stay
    routine.
 6. **Consent is checked at the moment of the action.** It is read from the home
    when the command arrives, never from the command. A command that spends

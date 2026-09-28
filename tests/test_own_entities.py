@@ -90,14 +90,29 @@ def test_a_renamed_own_entity_is_still_recognised():
     assert result.get("refused") and hass.calls == []
 
 
-def test_an_ordinary_switch_still_works():
+def test_an_ordinary_switch_needs_consent_and_then_works(monkeypatch):
+    """Switches need consent (owner, 2026-09-28): one may be a door strike."""
     hass = FakeHass()
     registry = FakeRegistry([_entity("switch.allow_dartec_support", "dartec_ha_manager"),
                              _entity("switch.porch", "tplink")])
+    refused = _run(hass, switch_on("switch.porch"), registry)
+    assert refused.get("refused") and "maintenance window" in refused["detail"]
+    assert hass.calls == []
+    monkeypatch.setattr(commands.maintenance, "consent",
+                        lambda h: {"allowed": True, "source": "window"})
     result = _run(hass, switch_on("switch.porch"), registry)
     assert result["ok"] is True
     # Handed on as the list that was checked (GHSA-vj2g-mxcr-wx5r).
     assert hass.calls == [("switch", "turn_on", {"entity_id": ["switch.porch"]})]
+
+
+def test_consent_does_not_open_the_homes_own_switch(monkeypatch):
+    monkeypatch.setattr(commands.maintenance, "consent",
+                        lambda h: {"allowed": True, "source": "window"})
+    hass = FakeHass()
+    registry = FakeRegistry([_entity("switch.allow_dartec_support", "dartec_ha_manager")])
+    result = _run(hass, switch_on("switch.allow_dartec_support"), registry)
+    assert result.get("refused") and hass.calls == []
 
 
 def test_an_area_cannot_carry_the_switch_in():

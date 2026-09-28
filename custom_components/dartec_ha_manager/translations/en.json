@@ -52,7 +52,7 @@
   "services": {
     "allow_maintenance": {
       "name": "Dartec: allow maintenance",
-      "description": "Let Dartec support perform sensitive operations (locks, covers, alarm, scenes, automations, reboots, account changes) for a limited time. Only a Home Assistant administrator can allow it. Everything done is logged.",
+      "description": "Let Dartec support perform sensitive operations (locks, covers, alarm, switches, scenes, automations, reboots, account changes) for a limited time. Only a Home Assistant administrator can allow it. Everything done is logged.",
       "fields": {
         "minutes": {
           "name": "Duration",

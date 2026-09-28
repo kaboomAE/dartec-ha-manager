@@ -65,13 +65,11 @@ ROUTINE_SERVICES = frozenset({
     "homeassistant.update_entity",
     "homeassistant.reload_config_entry",
     "light.turn_on", "light.turn_off", "light.toggle",
-    "switch.turn_on", "switch.turn_off", "switch.toggle",
     "fan.turn_on", "fan.turn_off",
     "scene.reload",
     "script.reload",
     "automation.reload",
     "backup.create",
-    "input_boolean.turn_on", "input_boolean.turn_off",
     "persistent_notification.create", "persistent_notification.dismiss",
 })
 
@@ -89,6 +87,13 @@ SENSITIVE_SERVICES = frozenset({
     # them only rereads configuration and stays routine.
     "scene.turn_on",
     "automation.turn_on", "automation.turn_off",
+    # The owner's decision, 2026-09-28. A switch can be anything wired to a
+    # relay: a door strike, a gate, a water valve, a heater. And an
+    # input_boolean is how a home tells its automations something ("away",
+    # "night mode"), so flipping one runs whatever they do next, the same as
+    # switching the automation on. Neither is known to be harmless from here.
+    "switch.turn_on", "switch.turn_off", "switch.toggle",
+    "input_boolean.turn_on", "input_boolean.turn_off",
 })
 
 # Domains where every service is consequential enough to need a window.

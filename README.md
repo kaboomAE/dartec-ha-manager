@@ -34,8 +34,9 @@ install rather than a number somebody remembered to update in two places.
   - **Never** — `shell_command`, `python_script`, `hassio.addon_stdin`,
     `hassio.host_shutdown` and `homeassistant.stop` are permanently blocked and
     no permission you grant can unlock them.
-  - **Sensitive** — locks, covers, alarm, climate, scenes, switching
-    automations on or off, reboots, deleting backups and account changes need
+  - **Sensitive** — locks, covers, alarm, climate, switches, toggle helpers,
+    scenes, switching automations on or off, reboots, deleting backups and
+    account changes need
     your consent, given on your own Home Assistant by one of its
     administrators. It can come from three places, and support can ask for it
     but never grant itself any:

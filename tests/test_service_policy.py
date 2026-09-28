@@ -214,6 +214,26 @@ class TestOffsiteBackupOptIn:
         assert check_opt_in({"action": action}, {}) is None
 
 
+class TestSwitchesAndToggles:
+    """The owner's decision, 2026-09-28: a switch may be a door strike or a
+    valve, and an input_boolean drives automations, so both need consent."""
+
+    @pytest.mark.parametrize("domain,service", [
+        ("switch", "turn_on"), ("switch", "turn_off"), ("switch", "toggle"),
+        ("input_boolean", "turn_on"), ("input_boolean", "turn_off")])
+    def test_need_a_window(self, domain, service):
+        data = {"entity_id": f"{domain}.front_gate"}
+        refusal = check_call_service(call(domain, service, **data), maintenance_open=False)
+        assert refusal and "maintenance window" in refusal
+        assert check_call_service(call(domain, service, **data), maintenance_open=True) is None
+
+    def test_lights_and_fans_stay_routine(self):
+        for domain in ("light", "fan"):
+            data = {"entity_id": f"{domain}.hall"}
+            assert check_call_service(call(domain, "turn_on", **data),
+                                      maintenance_open=False) is None
+
+
 class TestTheHomesOwnControls:
     """dartec-ha-manager#11: the cloud must not reach the switches that are
     the home's controls over the cloud."""
@@ -223,7 +243,7 @@ class TestTheHomesOwnControls:
 
         data = {"entity_id": "switch.allow_dartec_support"}
         assert check_call_service(call("switch", "turn_on", **data),
-                                  maintenance_open=False) is None  # routine...
+                                  maintenance_open=True) is None  # allowed with consent...
         refusal = check_own_entities(data, {"switch.allow_dartec_support"})
         assert refusal and "controlled only from this home" in refusal  # ...but ours
 
