@@ -2,7 +2,8 @@ allow_maintenance:
   name: "Dartec: allow maintenance"
   description: >-
     Let Dartec support perform sensitive operations in this home — locks,
-    covers, alarm, climate, scenes, automations, reboots and account changes —
+    covers, alarm, climate, switches, scenes, automations, reboots and account
+    changes —
     for a limited time. Only a Home Assistant administrator can allow it.
     Everything done during the window is written to your logbook. Closes
     automatically when it expires, and on any Home Assistant restart.
