@@ -55,6 +55,7 @@ Ranked by benefit to the family first, then by effort. Each section says whether
 - **Evidence:** [layout.md#crowded-rooms-offline-devices-and-odd-names](layout.md#crowded-rooms-offline-devices-and-odd-names)
 - **Benefit:** High: the single biggest legibility problem on the bench. **Effort:** M (planner field plus generator). **Risk:** Low.
 - **Issue:** [#46](https://github.com/kaboomAE/dartec-ha-manager/issues/46)
+- **Status (2026-09-28):** manager side implemented (dartec-ha-manager-server#59 and #78), no agent change needed. On room dashboards and the overview's room views alike, a tile takes the plan's label for its device where the plan line has one; otherwise it drops the room's name from the front of its name. Nothing is renamed in HA. Names that need a person (only a number, an IP or MAC address or hardware code, a word twice, two alike in a room) are listed for the technician in the template preview instead of guessed. **Still open:** the planner has no per-device label field and the commissioning apps cannot set one, so today every name comes from Home Assistant.
 
 ## R4
 
