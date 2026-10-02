@@ -13,7 +13,9 @@
 #   dashboard fix loaded and blocked, in Firefox and Chromium; the fix must
 #   never change the errors, and must still make notifications readable in
 #   dark mode — see tests/live/run_live_dwains.py (dartec-ha-manager#25).
-#   It also checks the brand fonts the same module declares (#59).
+#   Against Dwains v1.8.0 (the workarounds must work) and v1.10.0 (fixed
+#   upstream: the workarounds must do nothing). It also checks the brand
+#   fonts the same module declares (#59).
 # - live-brand: the brand's old spelling staged on a home (a stored default
 #   theme under the old name, the entry title, a dashboard title) and put
 #   right - see tests/live/run_live_brand.py.
@@ -201,15 +203,20 @@ jobs:
 
   live-dwains:
     # The dashboard fix against the dashboard it fixes, in two real browsers -
-    # see tests/live/run_live_dwains.py. Pinned to the versions the affected
-    # home ran; scheduled runs add `stable` so a newer Home Assistant is tried
-    # before homes take it. About three minutes.
+    # see tests/live/run_live_dwains.py. Pinned to the Home Assistant the
+    # affected home ran; scheduled runs add `stable` so a newer Home Assistant
+    # is tried before homes take it. Two Dwains releases: v1.8.0, which homes
+    # may still run and the workarounds are for, and v1.10.0, tested on the
+    # bench on 2026-10-02 and the release proposed for the manager to hold
+    # homes at, where upstream fixed them and the workarounds must stay out of
+    # the way. About five minutes each.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["2026.9.3", "stable"]' || '["2026.9.3"]') }}
+        dwains: ["v1.8.0", "v1.10.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -217,11 +224,11 @@ jobs:
           python-version: "3.12"
       - run: pip install playwright && python -m playwright install --with-deps chromium firefox
       - run: docker pull -q ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
-      - run: python tests/live/run_live_dwains.py ${{ matrix.version }} --artifacts live-artifacts
+      - run: python tests/live/run_live_dwains.py ${{ matrix.version }} --dwains ${{ matrix.dwains }} --artifacts live-artifacts
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-dwains-${{ matrix.version }}
+          name: live-dwains-${{ matrix.version }}-${{ matrix.dwains }}
           path: live-artifacts
           if-no-files-found: ignore
 

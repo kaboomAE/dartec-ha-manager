@@ -31,11 +31,20 @@
 // where Home Assistant mounts its own dialogs, inside <home-assistant>'s
 // shadow root, before Dwains opens it, and removed when it closes, because
 // Dwains' own clean-up only looks in document.body. Only that one dialog:
-// it is the one that renders Home Assistant cards. Once Dwains fixes this
-// upstream the picker is no longer on document.body and this does nothing.
+// it is the one that renders Home Assistant cards.
 //
 // A third, in the same dialog: its card editor forgets what was chosen in it
 // after a few seconds (dwains-dashboard-next#19). See the listener below.
+//
+// Dwains fixed both, and #20 below, in v1.8.1 (2026-09-30): it mounts the
+// picker inside <home-assistant> itself, and hands its editor the config
+// back. These corrections stay for homes still on 1.8.0, and are gated on the
+// one thing that tells the two apart without a version number (Dwains does
+// not expose one): a picker on document.body. Only a release before 1.8.1
+// puts it there, so only such a picker is moved and only its editor is handed
+// its config back. On 1.8.1 and later nothing here touches the pop-up: no
+// second move, no second setConfig. Bench-tested on 2026-10-02 with 1.8.0,
+// 1.8.1 and 1.10.0 (tests/live/run_live_dwains.py, docs/dwains-popup).
 //
 // And, unrelated to Dwains, the brand's fonts (dartec-ha-manager#59): the
 // next block, first because it needs nothing else to have loaded.
@@ -144,9 +153,13 @@
   // dialog and opens it on the next animation frame, and a mutation callback
   // runs before that frame, so the dialog is opened where it will stay.
   const PICKER = "dwains-dashboard-next-card-editor-dialog";
+  // Pickers Dwains put on document.body: the mark of a release before 1.8.1,
+  // and the only ones the editor correction below acts on.
+  const unfixed = new WeakSet();
   const rehome = (node) => {
     try {
       if (node.localName !== PICKER || node.parentNode !== document.body) return;
+      unfixed.add(node);
       const ha = document.querySelector("home-assistant");
       const root = ha && ha.shadowRoot;
       if (!root) return;
@@ -163,7 +176,7 @@
   };
 
   // Keep Dwains' card editor in step with what was chosen in it
-  // (reported upstream as dwains-dashboard-next#19). Home Assistant's card
+  // (dwains-dashboard-next#19, fixed in Dwains 1.8.1). Home Assistant's card
   // editors do not keep their own changes: they announce them with
   // config-changed and expect the host to hand the result back with
   // setConfig. Dwains merges the change into its card but never hands it
@@ -174,11 +187,14 @@
   // at the editor; this one is a capture listener, so it defers a
   // microtask), Dwains' own card is given back to Dwains' own editor. Nothing
   // happens outside that dialog, or if its internals are not as expected.
-  // Once Dwains does this itself, it is a harmless repeat.
+  // From 1.8.1 Dwains does this itself, and doing it again would hand the
+  // editor a stale config in the one case Dwains deliberately does not (a
+  // change without a card type), so it is done only in a picker Dwains put
+  // on document.body, i.e. before 1.8.1 (see the top).
   try {
     window.addEventListener("config-changed", (ev) => {
       const dialog = ev.composedPath().find((n) => n && n.localName === PICKER);
-      if (!dialog) return;
+      if (!dialog || !unfixed.has(dialog)) return;
       queueMicrotask(() => {
         try {
           const editor = dialog._configEl, card = dialog._card;
@@ -212,14 +228,16 @@
 })();
 
 // A fourth: Home custom cards that are saved but gone after a reload
-// (dartec-ha-manager#25, reported upstream as dwains-dashboard-next#20).
+// (dartec-ha-manager#25, dwains-dashboard-next#20, fixed in Dwains 1.8.1).
 // Dwains stores them in its strategy config as `home_custom_cards`, but both
 // of its generators copy a fixed list of keys onward, the Home view's
 // strategy and then the layout card, and that key is not on either list. So
 // the card is saved, shows until the page reloads, and then is never drawn.
 // Reproduced on a clean install with only Dwains. The generators are wrapped
-// to carry that one key through, only where Dwains left it out, so this
-// does nothing once Dwains passes it itself. Its own IIFE, so it does not
+// to carry that one key through, only where Dwains left it out. From 1.8.1
+// both generators always pass it (an empty list when there are none), so
+// there it never writes anything: gated by what Dwains built, not by a
+// version number it does not expose. Its own IIFE, so it does not
 // depend on the stylesheet above, and it runs as the module loads, before
 // Home Assistant asks the strategy to build the dashboard.
 (() => {
