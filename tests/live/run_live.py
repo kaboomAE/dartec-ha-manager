@@ -34,7 +34,8 @@ For each Home Assistant version given, this:
    comes back, where Home Assistant has none of its own, and that every key
    it corrects still exists in HA's English (dartec-ha-manager#55);
 10. checks the log: nothing reported against `dartec_ha_manager`, in
-   particular no device-registry mapping deprecation and no blocking read of
+   particular no device-registry mapping deprecation, no read of a device's
+   deprecated `config_entries` (2026.10) and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
 
@@ -96,6 +97,8 @@ logger:
 # report_usage's wording (homeassistant/helpers/frame.py) and the device
 # registry's own message (helpers/device_registry.py, 2026.9).
 DEVICE_MAPPING = "uses `device_registry.devices` as a mapping"
+# 2026.10: a device belongs to one config entry; the old set is a reported shim.
+DEVICE_ENTRIES = "accesses `DeviceEntry.config_entries`"
 # homeassistant/util/loop.py, for a call made from an integration's frame.
 BLOCKING = re.compile(r"Detected blocking call to (\w+) with args (.*?) inside the event loop "
                       r"by (?:custom )?integration '([\w]+)'")
@@ -501,22 +504,35 @@ def check_log(text: str, version: str) -> tuple[list[str], dict]:
     if not mapping_is_deprecated and canary_mapping:
         problems.append("canary's mapping access was reported on a version that should "
                         "not deprecate it; the version boundary assumption is wrong")
+    entries_are_deprecated = version_tuple(version) >= (2026, 10)
+    canary_entries = [line for line in reported[CANARY_DOMAIN] if DEVICE_ENTRIES in line]
+    if entries_are_deprecated and not canary_entries:
+        problems.append("canary's DeviceEntry.config_entries read was not reported — the "
+                        "deprecation check cannot be trusted on this image")
+    if not entries_are_deprecated and canary_entries:
+        problems.append("canary's DeviceEntry.config_entries read was reported on a version "
+                        "that should not deprecate it; the version boundary assumption is wrong")
     if not any("manifest.json" in line for line in blocking[CANARY_DOMAIN]):
         problems.append("canary's blocking open of manifest.json was not reported — the "
                         "blocking-call check cannot be trusted on this image")
 
     agent_mapping = [line for line in reported[AGENT_DOMAIN] if DEVICE_MAPPING in line]
+    agent_entries = [line for line in reported[AGENT_DOMAIN] if DEVICE_ENTRIES in line]
     agent_manifest = [line for line in blocking[AGENT_DOMAIN] if "manifest.json" in line]
     if agent_mapping:
         problems.append("agent used the device registry as a mapping:\n  "
                         + "\n  ".join(agent_mapping))
+    if agent_entries:
+        problems.append("agent read a device's deprecated config_entries (use "
+                        "registry_access.device_config_entries):\n  "
+                        + "\n  ".join(agent_entries))
     if agent_manifest:
         problems.append("agent read manifest.json in the event loop:\n  "
                         + "\n  ".join(agent_manifest))
     # Anything else Home Assistant holds against the agent is just as much a
     # future break, even if it is not one of the two this test was written for.
     others = [line for line in reported[AGENT_DOMAIN] + blocking[AGENT_DOMAIN]
-              if line not in agent_mapping and line not in agent_manifest]
+              if line not in agent_mapping + agent_entries + agent_manifest]
     if others:
         problems.append("Home Assistant reported the agent for:\n  " + "\n  ".join(others))
     errors = [line.strip() for line in text.splitlines()
@@ -524,6 +540,7 @@ def check_log(text: str, version: str) -> tuple[list[str], dict]:
     if errors:
         problems.append("agent logged errors:\n  " + "\n  ".join(errors[:20]))
     return problems, {"canary_reported": canary_mapping,
+                      "canary_entries": canary_entries,
                       "canary_blocking": blocking[CANARY_DOMAIN]}
 
 
@@ -625,6 +642,7 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: Home Assistant {running}, {len(truth['devices'])} devices; "
             "canary reports seen: "
             f"{len(evidence['canary_reported'])} mapping, "
+            f"{len(evidence['canary_entries'])} config_entries, "
             f"{len(evidence['canary_blocking'])} blocking")
 
         if artifacts:

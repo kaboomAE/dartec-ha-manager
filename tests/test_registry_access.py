@@ -15,7 +15,7 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "dartec_ha_manager"
 sys.path.insert(0, str(PACKAGE))
 
-from registry_access import all_devices  # noqa: E402
+from registry_access import all_devices, device_config_entries  # noqa: E402
 
 
 class Entry:
@@ -101,3 +101,88 @@ class TestTheMappingFormStaysGone:
                          path.read_text(encoding="utf-8").splitlines(), start=1)
                      if self.MAPPING_USE.search(line)]
         assert offenders == []
+
+
+class DeprecatedShimRead(AssertionError):
+    pass
+
+
+class DeviceSince2026_8:
+    """2026.8 on: one `config_entry_id`; `config_entries` is a shim that
+    2026.10 reports on every read. Slots, like HA's attrs classes."""
+
+    __slots__ = ("config_entry_id",)
+
+    def __init__(self, config_entry_id):
+        self.config_entry_id = config_entry_id
+
+    @property
+    def config_entries(self):
+        raise DeprecatedShimRead("DeviceEntry.config_entries")
+
+    @property
+    def config_entries_subentries(self):
+        raise DeprecatedShimRead("DeviceEntry.config_entries_subentries")
+
+    @property
+    def primary_config_entry(self):
+        raise DeprecatedShimRead("DeviceEntry.primary_config_entry")
+
+
+class DeviceUpTo2026_7:
+    """2024.6 through 2026.7: a set of entries and no `config_entry_id` at all."""
+
+    __slots__ = ("config_entries",)
+
+    def __init__(self, *entry_ids):
+        self.config_entries = set(entry_ids)
+
+
+class TestADevicesConfigEntries:
+    def test_current_home_assistant_reads_the_one_entry_not_the_shim(self):
+        assert device_config_entries(DeviceSince2026_8("entry-1")) == {"entry-1"}
+
+    def test_oldest_supported_home_assistant_reads_the_set(self):
+        assert device_config_entries(DeviceUpTo2026_7("entry-1", "entry-2")) ==             {"entry-1", "entry-2"}
+
+    def test_a_device_with_no_entry_is_an_empty_set_on_both(self):
+        assert device_config_entries(DeviceSince2026_8(None)) == set()
+        assert device_config_entries(DeviceUpTo2026_7()) == set()
+
+    def test_the_old_set_is_copied_not_shared(self):
+        device = DeviceUpTo2026_7("entry-1")
+        device_config_entries(device).add("entry-2")
+        assert device.config_entries == {"entry-1"}
+
+    def test_both_shapes_feed_the_offline_rules_the_same_way(self):
+        from device_health import device_is_judged
+        loaded = {"entry-1"}
+        for device in (DeviceSince2026_8("entry-1"), DeviceUpTo2026_7("entry-1")):
+            assert device_is_judged({"config_entries": device_config_entries(device)}, loaded)
+        for device in (DeviceSince2026_8("entry-2"), DeviceUpTo2026_7("entry-2")):
+            assert not device_is_judged({"config_entries": device_config_entries(device)},
+                                        loaded)
+
+
+class TestTheDeprecatedEntryShimsStayGone:
+    """Like the mapping sweep: 2026.10 only logs these reads, so a new one
+    would pass every other unit test and break on a home in 2027.10.
+    `hass.config_entries` and `homeassistant.config_entries` are a different
+    thing (the config entry manager) and are not matched."""
+
+    SHIM_USE = re.compile(r"(?<!hass)(?<!homeassistant)\.config_entries\b"
+                          r"|\.config_entries_subentries\b|\.primary_config_entry\b")
+
+    def test_no_module_reads_a_devices_deprecated_entry_attributes(self):
+        offenders = [f"{path.name}:{number}: {line.strip()}"
+                     for path in sorted(PACKAGE.glob("*.py"))
+                     if path.name != "registry_access.py"  # the one place that may
+                     for number, line in enumerate(
+                         path.read_text(encoding="utf-8").splitlines(), start=1)
+                     if self.SHIM_USE.search(line)]
+        assert offenders == []
+
+    def test_the_sweep_would_catch_the_line_that_broke_on_2026_10(self):
+        assert self.SHIM_USE.search('"config_entries": device.config_entries}')
+        assert not self.SHIM_USE.search("for entry in hass.config_entries.async_entries():")
+        assert not self.SHIM_USE.search("from homeassistant.config_entries import ConfigEntry")
