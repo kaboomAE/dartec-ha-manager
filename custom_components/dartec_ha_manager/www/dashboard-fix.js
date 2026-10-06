@@ -47,7 +47,9 @@
 // 1.8.1 and 1.10.0 (tests/live/run_live_dwains.py, docs/dwains-popup).
 //
 // And, unrelated to Dwains, the brand's fonts (dartec-ha-manager#59): the
-// next block, first because it needs nothing else to have loaded.
+// next block, first because it needs nothing else to have loaded. And last,
+// also unrelated to Dwains, a value and its unit in right-to-left languages
+// (dartec-ha-manager#55): "22.0 °C", not "C° 22.0", in Arabic.
 
 // The brand's fonts, so the Dartec themes' font variables resolve
 // (dartec-ha-manager#59). A theme can name a font but cannot load one: a
@@ -282,4 +284,135 @@
       }
     });
   }));
+})();
+
+// A fifth, unrelated to Dwains: a value with a unit, in a right-to-left
+// language (dartec-ha-manager#55). In Arabic, Home Assistant draws 22.0 °C as
+// "C° 22.0": the number and its unit go into a right-to-left line as plain
+// text, nothing isolates them, and under the Unicode Bidirectional Algorithm
+// the digits count as right-to-left when the space and "°" are placed (UAX #9
+// rules W7, N1, N2), so the unit lands on the far side and splits. Seen on the
+// bench (2026.9.3) and in a real home, in tiles, entity and heading badges, the
+// target-temperature stepper, and the area card (HA's own Overview rooms);
+// the same in Chromium and Firefox. A mode in front does not save it once the
+// mode is in Arabic: "تبريد · 23.5 °C" breaks the same way.
+//
+// Home Assistant fixed the same thing in two other places in frontend #54205
+// (HA 2026.10), with bidiIsolate(): the value wrapped in U+2068 FIRST STRONG
+// ISOLATE ... U+2069 POP DIRECTIONAL ISOLATE. Not in these, so this does the
+// same in these, and only these:
+//
+// - <state-display> (tile secondary line, entity badge, heading badge). It
+//   renders into its own light DOM, one text node per part ("تبريد", " · ",
+//   "23.5 °C"), so each number-and-unit run in those text nodes is wrapped in
+//   the isolates. Run by run, not the whole element: isolating the whole line
+//   left to right would put "تبريد" on the wrong side of "23.5 °C".
+// - <ha-tile-info>'s secondary line (the area card's "22.0 °C · 45%"), the
+//   same way, inside its shadow root.
+// - <ha-control-number-buttons> (the stepper), where the number and the unit
+//   are two flex items in one .value box: that box alone is laid out left to
+//   right, by a stylesheet adopted into its shadow root. The − and + buttons
+//   are outside it and keep their right-to-left places.
+//
+// Only while the page is right to left (Home Assistant sets document.dir from
+// the language), and undone when it is not: a text node goes back to exactly
+// what Home Assistant wrote, and the stylesheet comes off. Left-to-right pages
+// are never touched. A run Home Assistant already isolated (a text node with
+// any bidi isolate in it) is left alone, so once upstream fixes a component
+// this steps aside. Each element is corrected right after it renders, by
+// wrapping its own `updated`, the hook Lit calls after every render; if Home
+// Assistant renames the element or it stops being a Lit element, nothing
+// happens. When Home Assistant re-renders a changed value it writes the text
+// node again, and the next `updated` isolates it again.
+(() => {
+  const FSI = "\u2068", PDI = "\u2069";
+  const ISOLATES = /[\u2066-\u2069]/;
+  // A number (Western or Arabic-Indic digits, with grouping and decimal
+  // marks), an optional space, and a unit: one short token of letters and
+  // unit signs ("°C", "%", "kWh", "µg/m³"). Not inside a longer word.
+  const RUN = /(?<![\p{L}\p{N}.,])[-\u2212+]?[0-9\u0660-\u0669\u06F0-\u06F9](?:[0-9\u0660-\u0669\u06F0-\u06F9.,\u066B\u066C\u00A0\u202F]*[0-9\u0660-\u0669\u06F0-\u06F9])?[ \u00A0\u202F]?[\p{L}\u00B0%\u2030\u00B5][\p{L}\u00B0%\u2030\u00B5/\u00B2\u00B3]{0,7}(?![\p{L}\p{N}])/gu;
+
+  let SHEET = null;
+  try {
+    SHEET = new CSSStyleSheet();
+    SHEET.replaceSync(".value { direction: ltr; unicode-bidi: isolate; }");
+  } catch (err) {
+    SHEET = null;  // no constructable stylesheets: the stepper stays as HA draws it
+  }
+
+  const rtl = () => {
+    try {
+      const dir = document.dir || document.documentElement.getAttribute("dir") || "";
+      return dir.toLowerCase() === "rtl";
+    } catch (err) {
+      return false;
+    }
+  };
+
+  // What this module wrote into a text node, and what Home Assistant had.
+  const ours = new WeakMap();
+
+  const text = (node, isRTL) => {
+    if (!node || node.nodeType !== 3) return;
+    const mine = ours.get(node);
+    if (!isRTL) {
+      if (mine && node.data === mine.isolated) node.data = mine.original;
+      return;
+    }
+    if (mine && node.data === mine.isolated) return;  // already done
+    const original = node.data;
+    if (!original || ISOLATES.test(original)) return;  // HA isolated it itself
+    RUN.lastIndex = 0;
+    const isolated = original.replace(RUN, (run) => FSI + run + PDI);
+    if (isolated === original) return;
+    ours.set(node, {original, isolated});
+    node.data = isolated;
+  };
+
+  const children = (el, isRTL) => {
+    [...(el && el.childNodes || [])].forEach((node) => text(node, isRTL));
+  };
+
+  const FIXES = {
+    "state-display": (el, isRTL) => children(el, isRTL),
+    "ha-tile-info": (el, isRTL) => {
+      const root = el.shadowRoot;
+      if (!root) return;
+      root.querySelectorAll(".secondary").forEach((line) => {
+        children(line, isRTL);
+        [...line.children].forEach((span) => children(span, isRTL));
+      });
+    },
+    "ha-control-number-buttons": (el, isRTL) => {
+      const root = el.shadowRoot;
+      if (!SHEET || !root || !("adoptedStyleSheets" in root)) return;
+      const has = root.adoptedStyleSheets.includes(SHEET);
+      if (isRTL && !has) root.adoptedStyleSheets = [...root.adoptedStyleSheets, SHEET];
+      if (!isRTL && has) root.adoptedStyleSheets = root.adoptedStyleSheets.filter((s) => s !== SHEET);
+    },
+  };
+
+  Object.entries(FIXES).forEach(([tag, fix]) => {
+    try {
+      customElements.whenDefined(tag).then(() => {
+        const cls = customElements.get(tag);
+        const proto = cls && cls.prototype;
+        if (!proto || typeof proto.updated !== "function") return;
+        if (Object.prototype.hasOwnProperty.call(proto, "__dartecBidi")) return;
+        const original = proto.updated;
+        proto.updated = function (...args) {
+          const out = original.apply(this, args);
+          try {
+            fix(this, rtl());
+          } catch (err) {
+            /* as Home Assistant drew it: the upstream behaviour, nothing worse */
+          }
+          return out;
+        };
+        proto.__dartecBidi = true;
+      });
+    } catch (err) {
+      /* no custom elements registry: nothing to do */
+    }
+  });
 })();

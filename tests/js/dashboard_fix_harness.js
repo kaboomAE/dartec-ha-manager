@@ -12,6 +12,13 @@
 //   old-strategy Dwains 1.8.0's generators leave home_custom_cards out.
 //   new-strategy Dwains 1.8.1 and later pass it, an empty list when none.
 //
+// And for the right-to-left unit correction (#55), Home Assistant's own
+// elements as Lit renders them, with the page in a given direction:
+//   units-rtl     Arabic: document.dir is "rtl".
+//   units-ltr     English: document.dir is "ltr".
+//   units-switch  Arabic, then English, then Arabic again, on the same page,
+//                 with Home Assistant writing a new value in between.
+//
 // Only what the module touches is modelled. It is not a DOM; it is enough to
 // see which of the corrections act.
 "use strict";
@@ -23,6 +30,8 @@ const [, , file, scenario] = process.argv;
 
 class Node {
   constructor(localName) {
+    this.nodeType = 1;
+    this.className = "";
     this.localName = localName;
     this.parentNode = null;
     this.children = [];
@@ -41,15 +50,25 @@ class Node {
     child.parentNode = null;
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
-  querySelectorAll(tag) {
+  get childNodes() { return this.children; }
+  // A tag name, or a single ".class".
+  querySelectorAll(sel) {
+    const hit = sel.startsWith(".")
+      ? (c) => (c.className || "").split(" ").includes(sel.slice(1))
+      : (c) => c.localName === sel;
     const out = [];
-    const visit = (n) => n.children.forEach((c) => { if (c.localName === tag) out.push(c); visit(c); });
+    const visit = (n) => (n.children || []).forEach((c) => { if (hit(c)) out.push(c); visit(c); });
     visit(this);
     return out;
   }
   querySelector(tag) { return this.querySelectorAll(tag)[0] || null; }
   addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
   getRootNode() { let n = this; while (n.parentNode) n = n.parentNode; return n; }
+}
+
+// A text node, which is what Lit writes a string into.
+class Text {
+  constructor(data) { this.nodeType = 3; this.data = data; this.parentNode = null; }
 }
 
 const observers = [];
@@ -74,6 +93,8 @@ document.body = body;
 document.head = head;
 document.documentElement = document;
 document.getElementById = () => null;
+document.dir = "";
+document.getAttribute = () => null;
 document.createElement = (tag) => new Node(tag);
 document.querySelector = (tag) => document.querySelectorAll(tag)[0] || null;
 
@@ -95,7 +116,7 @@ const define = (tag, cls) => {
   defined[tag] = cls;
   (waiting[tag] || []).forEach((resolve) => resolve());
 };
-class CSSStyleSheet { replaceSync() {} }
+class CSSStyleSheet { replaceSync(css) { this.css = css; } }
 
 const context = vm.createContext({
   window, document, customElements, CSSStyleSheet, MutationObserver, console,
@@ -149,8 +170,119 @@ const strategy = (keyPassed) => {
   return cards;
 };
 
+// Home Assistant's elements, as far as the unit correction sees them: Lit
+// elements that write each string part into its own text node, writing a
+// node again only when its value changed, and then call updated(). The
+// base class owns updated(), as LitElement does; ha-tile-info overrides it.
+class LitElement extends Node {
+  updated() { this.updates = (this.updates || 0) + 1; }
+}
+class StateDisplay extends LitElement {}
+class TileInfo extends LitElement {
+  updated(changed) { super.updated(changed); this.ownUpdated = true; }
+}
+class NumberButtons extends LitElement {}
+
+// Renders `values` into `parent`'s text nodes, as Lit's child parts do.
+const render = (el, parent, values) => {
+  parent.parts = parent.parts || [];
+  values.forEach((value, i) => {
+    if (!parent.parts[i]) {
+      parent.parts[i] = {node: parent.appendChild(new Text(value)), committed: value};
+    } else if (parent.parts[i].committed !== value) {
+      parent.parts[i].node.data = value;
+      parent.parts[i].committed = value;
+    }
+  });
+  el.updated(new Map());
+};
+
+const units = async (directions) => {
+  define("state-display", StateDisplay);
+  define("ha-tile-info", TileInfo);
+  define("ha-control-number-buttons", NumberButtons);
+  await new Promise((r) => setTimeout(r, 5));
+
+  const card = ha.shadowRoot.appendChild(new Node("hui-tile-card"));
+  card.shadowRoot = new Node("#shadow-root");
+  const make = (Cls, tag) => {
+    const el = new Cls(tag);
+    card.shadowRoot.appendChild(el);
+    return el;
+  };
+  // <state-display> renders into its own light DOM.
+  const displays = {
+    sensor: ["22.0 °C"],
+    climate: ["تبريد", " · ", "23.5 °C"],
+    climate_en: ["Cool", " · ", "23.5 °C"],
+    upstream: ["\u206822.0 °C\u2069"],
+    arabic_digits: ["٢٢٫٥ °C"],
+    negative: ["-3.5 °C"],
+    energy: ["1,234.5 kWh"],
+    words: ["On"],
+    name: ["Bedroom 2"],
+  };
+  const els = {};
+  Object.keys(displays).forEach((k) => { els[k] = make(StateDisplay, "state-display"); });
+  // <ha-tile-info>: primary and secondary spans inside its shadow root.
+  const info = make(TileInfo, "ha-tile-info");
+  info.shadowRoot = new Node("#shadow-root");
+  const primarySlot = info.shadowRoot.appendChild(new Node("slot"));
+  primarySlot.className = "primary";
+  const primary = primarySlot.appendChild(new Node("span"));
+  const secondarySlot = info.shadowRoot.appendChild(new Node("slot"));
+  secondarySlot.className = "secondary";
+  const secondary = secondarySlot.appendChild(new Node("span"));
+  // <ha-control-number-buttons>, with a stylesheet of its own already.
+  const buttons = make(NumberButtons, "ha-control-number-buttons");
+  buttons.shadowRoot = new Node("#shadow-root");
+  const own = new CSSStyleSheet();
+  buttons.shadowRoot.adoptedStyleSheets = [own];
+
+  const paint = (sensorValue) => {
+    Object.entries(displays).forEach(([k, values]) =>
+      render(els[k], els[k], k === "sensor" ? [sensorValue] : values));
+    primary.parts = primary.parts || [];
+    render(info, primary, ["Kitchen 230 W"]);
+    render(info, secondary, ["22.0 °C · 45%"]);
+    buttons.updated(new Map());
+  };
+  const look = () => ({
+    displays: Object.fromEntries(Object.keys(displays).map((k) =>
+      [k, els[k].childNodes.map((n) => n.data).join("")])),
+    tile_primary: primary.childNodes.map((n) => n.data).join(""),
+    tile_secondary: secondary.childNodes.map((n) => n.data).join(""),
+    stepper_sheets: buttons.shadowRoot.adoptedStyleSheets.map((sh) =>
+      sh === own ? "home-assistant" : sh.css),
+    tile_info_own_updated: Boolean(info.ownUpdated),
+    updates: els.sensor.updates,
+  });
+
+  const steps = [];
+  for (const [i, step] of directions.entries()) {
+    document.dir = step.dir;
+    paint(step.value);
+    steps.push({dir: step.dir, value: step.value, ...look()});
+    if (i === 0) {  // a second render with nothing changed: no double isolation
+      paint(step.value);
+      steps[0].repainted = look();
+    }
+  }
+  return steps;
+};
+
 const run = async () => {
   const out = {scenario};
+  if (scenario === "units-rtl") out.steps = await units([{dir: "rtl", value: "22.0 °C"}]);
+  if (scenario === "units-ltr") out.steps = await units([{dir: "ltr", value: "22.0 °C"}]);
+  if (scenario === "units-switch") {
+    out.steps = await units([
+      {dir: "rtl", value: "22.0 °C"},
+      {dir: "ltr", value: "22.0 °C"},  // the language changes; the value does not
+      {dir: "ltr", value: "22.5 °C"},  // Home Assistant writes a new value
+      {dir: "rtl", value: "23.0 °C"},  // and back to Arabic, with another
+    ]);
+  }
   if (scenario === "old-picker" || scenario === "new-picker") {
     const {dialog, editor} = picker();
     const old = scenario === "old-picker";
