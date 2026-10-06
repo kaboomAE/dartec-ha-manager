@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from . import ha_update, household_ws, maintenance
+from . import arabic_states, ha_update, household_ws, maintenance
 from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
@@ -40,6 +40,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Branding is restored from the entry's options, so a home keeps its
     # installer branding across restarts even if the manager is unreachable.
     await async_setup_branding(hass, entry.options.get("branding"))
+    # Dartec's formal Arabic for the state words Home Assistant's Arabic
+    # leaves in English ("On", "Cool", "Open"), only where HA has none of its
+    # own. In the background: nothing else waits on it. See arabic_states.py.
+    entry.async_create_background_task(
+        hass, arabic_states.async_setup(hass), "dartec_ha_manager arabic states")
 
     # Sensitive remote operations are gated on a window only someone in the
     # house can open. Registering these is what makes that consent possible.
@@ -72,6 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     household_ws.async_unload(hass)
+    await arabic_states.async_unload(hass)
     await maintenance.async_unregister_services(hass)
     link: CloudLink | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if link:

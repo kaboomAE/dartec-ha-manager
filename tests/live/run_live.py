@@ -29,7 +29,11 @@ For each Home Assistant version given, this:
    checks the agent's `offline_devices` and `batteries` sections report
    exactly what Home Assistant was told — no more, no less — and that every
    device row carries `available` and `last_seen` to match;
-9. checks the log: nothing reported against `dartec_ha_manager`, in
+9. asks Home Assistant for its Arabic state words the way the frontend does
+   (`arabic_states_check.py`) and checks the agent's formal Arabic is what
+   comes back, where Home Assistant has none of its own, and that every key
+   it corrects still exists in HA's English (dartec-ha-manager#55);
+10. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
@@ -176,6 +180,7 @@ def start_container(name: str, version: str, config: Path) -> int:
     docker("cp", str(HERE / "stub_manager.py"), f"{name}:/stub_manager.py")
     docker("cp", str(HERE / "ha_registry.py"), f"{name}:/ha_registry.py")
     docker("cp", str(HERE / "device_health_setup.py"), f"{name}:/device_health_setup.py")
+    docker("cp", str(HERE / "arabic_states_check.py"), f"{name}:/arabic_states_check.py")
     docker("start", name)
     mapping = docker("port", name, "8123/tcp").strip().splitlines()[0]
     return int(mapping.rsplit(":", 1)[1])
@@ -599,6 +604,13 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         problems += health_problems
         log(f"{version}: device health: {len(health.get('offline', []))} offline, "
             f"batteries {[b.get('level') for b in health.get('batteries', [])]}")
+
+        arabic = json.loads(docker("exec", name, "python3", "/arabic_states_check.py",
+                                   token).strip().splitlines()[-1])
+        problems += arabic["problems"]
+        log(f"{version}: Arabic states: {arabic['evidence']['dartec']} in Dartec's Arabic, "
+            f"{len(arabic['evidence']['ha_own_arabic'])} left as Home Assistant has them, "
+            f"{len(arabic['problems'])} problem(s)")
 
         brand_problems = check_brand(base, token, running)
         problems += brand_problems
