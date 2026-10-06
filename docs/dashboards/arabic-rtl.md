@@ -32,8 +32,8 @@ name are that account in Arabic.
 
 | Problem | Seen where | Whose it is | Fix |
 |---|---|---|---|
-| **State words are still English**: "On", "Off", "Cool", "Open", "Closed", "Idle" | Every tile | Home Assistant's Arabic translation. We read `frontend/get_translations` for Arabic: `light … state.on` is literally "On", and so are switch off, climate cool and cover open. They were never translated, so the English falls through | Contribute the translations to Home Assistant, which translates through Lokalise ([R12](recommendations.md)). This fixes it for every Arabic user of HA, not only Dartec's |
-| **Temperatures read "C° 22.0"** | Heading badges, the target-temperature stepper, and HA's own Overview room cards | Home Assistant. The number and the unit are laid out as separate runs in a right-to-left paragraph, so the unit lands on the wrong side. When the state is mixed with a Latin word ("Cool · 23.5 °C") it comes out right | Report upstream (R12). Nothing in a dashboard can fix it |
+| **State words are still English**: "On", "Off", "Cool", "Open", "Closed", "Idle" | Every tile | Home Assistant's Arabic translation. We read `frontend/get_translations` for Arabic: `light … state.on` is literally "On", and so are switch off, climate cool and cover open. They were never translated, so the English falls through | Contribute the translations to Home Assistant, which translates through Lokalise ([R12](recommendations.md)). This fixes it for every Arabic user of HA, not only Dartec's. **Until then the agent shows Dartec's formal Arabic** (0.25.0, `arabic_states.py`): «مُشغَّل» / «مُطفأ», «تبريد», «مفتوح» and so on, only where HA's Arabic is still English, and HA's own word wins the day it ships one. See [Arabic state words](#arabic-state-words) |
+| **Temperatures read "C° 22.0"** | Heading badges, the target-temperature stepper, and HA's own Overview room cards | Home Assistant. The number and the unit are laid out as separate runs in a right-to-left paragraph, so the unit lands on the wrong side. When the state is mixed with a Latin word ("Cool · 23.5 °C") it comes out right | Report upstream (R12). Nothing in a dashboard can fix it, but **the agent does from 0.25.0**: `www/dashboard-fix.js` isolates each value and its unit in Arabic, so it reads "22.0 °C". Also confirmed in Chromium and Firefox: once "Cool" is translated, "تبريد · 23.5 °C" breaks the same way, and is fixed the same way. See [Units in right-to-left](#units-in-right-to-left) |
 | **English names lose their beginning** in an Arabic layout: "…jlis wall washers", "…near the door" | Today's generator, where names are HA's own (English) | Ours. An English name in a right-to-left tile is truncated at its start, which is the part that says what it is | Write Arabic names ([R4](recommendations.md)). Where a name must stay English (a model number), keep it short |
 | **Long Arabic names in an English layout lose their beginning** too: "…حول المجلس الرئيسي" | Today's generator in English | Ours, for the same reason in the other direction | Use each language's own names in each language's dashboard |
 | **Headings, room names and tile names are not translated** | Everywhere | By design: HA translates its own strings, and names are whatever the installer typed | The generator writes the Arabic itself. Today it writes Arabic section headings (unreviewed) but English or raw device names |
@@ -42,6 +42,63 @@ name are that account in Arabic.
 
 ![Today's generator in Arabic: English names cut at the start](screenshots/layouts/today-majlis-phone-dark-ar.webp)
 ![Crowded suite in Arabic: English names cut at the start](screenshots/layouts/proto-suite-tablet-light-ar.webp)
+
+## Arabic state words
+
+From agent 0.25.0 (dartec-ha-manager#55; the owner's words, kaboomAE/dartec-ops#15).
+Home Assistant's Arabic has no Arabic at all for the states of lights,
+switches, fans, covers and ACs (read from the HA 2026.9.3 and 2026.10.0b1
+images), and translates the climate preset "Activity" as «السجل», "the log".
+The agent puts Dartec's formal Arabic into Home Assistant's own Arabic
+translation cache when it starts:
+
+| | English | Arabic |
+|---|---|---|
+| Lights, switches, sockets, fans, toggle helpers | On / Off | مُشغَّل / مُطفأ |
+| Curtains and blinds | Open / Closed / Opening / Closing / Stopped | مفتوح / مغلق / جارٍ الفتح / جارٍ الإغلاق / متوقف |
+| AC modes | Off, Auto, Cool, Dry, Fan only, Heat, Heat/Cool | مُطفأ، تلقائي، تبريد، تجفيف، مروحة فقط، تدفئة، تدفئة/تبريد |
+| AC current action | Cooling, Heating, Drying, Fan, Defrosting, Preheating, Idle | جارٍ التبريد، جارٍ التدفئة، جارٍ التجفيف، المروحة تعمل، جارٍ إذابة الجليد، جارٍ التسخين المسبق، خامل |
+| AC presets | None, Eco, Comfort, Boost, Sleep, Activity | بلا، اقتصادي، راحة، تعزيز، نوم، نشاط |
+| AC fan and swing | Auto, Low, Medium, High; Vertical, Horizontal, Both | تلقائي، منخفض، متوسط، مرتفع؛ عمودي، أفقي، كلاهما |
+| Door sensors | Open / Closed | مفتوح / مغلق |
+| Window sensors | Open / Closed | مفتوحة / مغلقة |
+| Leak | Wet / Dry | مبلل / جاف |
+| Gas, smoke, CO, motion, occupancy | Detected / Clear | مُكتشَف / خالٍ |
+| Safety, problem | Unsafe / Safe, Problem / OK | غير آمن / آمن، مشكلة / سليم |
+
+The full list, key by key, is `custom_components/dartec_ha_manager/arabic_states.py`.
+
+- **State, not command.** «مُشغَّل», not «تشغيل»: that is what the "Turn on"
+  button already says.
+- **Masculine by default**, feminine only where the key's noun needs it: the
+  window sensor. A curtain is a cover, which HA gives one set of words for
+  every kind, so it reads «مفتوح» like a door.
+- **HA's own Arabic always wins.** Only a value that is still English (or
+  «السجل») is replaced. «غير متوفر», «في المنزل» and «خارج المنزل» are HA's
+  and stay. The day HA ships a word, HA's word is shown.
+- **Why the translation cache, in the backend.** The frontend asks for these
+  words early in its start-up, often before an agent script has loaded, and
+  keeps the answer for the session; the backend cache is asked on every page
+  load and is never rebuilt once loaded. It is the same answer for every
+  browser, the companion app and HA's own backend. If Home Assistant ever
+  stops working that way, the correction does nothing and HA's words show,
+  as before.
+
+## Units in right-to-left
+
+From agent 0.25.0 (#55). In Arabic, Home Assistant drew a temperature on its
+own as "C° 22.0": the number and its unit go into a right-to-left line with
+nothing to isolate them, and under the Unicode Bidirectional Algorithm the
+unit lands on the far side and splits. `www/dashboard-fix.js` wraps each
+number-and-unit in Unicode isolates in the elements that draw them (tiles,
+entity and heading badges, the area card's line, as HA's own `bidiIsolate()`
+does since frontend #54205), and lays out the target-temperature stepper's
+value left to right. Only while the page is right to left; in English nothing
+is touched. A mode next to a value keeps its place: «تبريد · 23.5 °C» reads
+right to left with the temperature intact.
+
+Checked in Chromium and Firefox, and on every view of every dashboard by
+`tests/live/run_live_dashboards.py`, which measures where each unit is drawn.
 
 ## Names: what the generator needs
 
