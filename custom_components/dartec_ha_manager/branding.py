@@ -328,7 +328,8 @@ async def async_setup_branding(hass: HomeAssistant, config: dict[str, Any] | Non
     # than given its own registration because it rides the same static path and
     # the same mechanism; it carries no configuration and does nothing on homes
     # that do not run that dashboard. See www/dashboard-fix.js. It also
-    # declares the brand's fonts (www/fonts).
+    # declares the brand's fonts (www/fonts), and keeps a value and its unit
+    # in order in right-to-left languages (#55).
     #
     # A content hash as the cache buster: the static path is served with a
     # 31-day cache, so without it a browser could keep the previous agent's

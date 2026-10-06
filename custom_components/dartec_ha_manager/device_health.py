@@ -218,7 +218,7 @@ def collect(hass) -> dict[str, Any]:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er
 
-        from .registry_access import all_devices
+        from .registry_access import all_devices, device_config_entries
 
         area_names = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
         devices = {d.id: d for d in all_devices(dr.async_get(hass))}
@@ -284,7 +284,7 @@ def collect(hass) -> dict[str, Any]:
             facts = {"disabled": device.disabled_by is not None,
                      "entry_type": getattr(device.entry_type, "value", device.entry_type),
                      "labels": getattr(device, "labels", None) or (),
-                     "config_entries": device.config_entries}
+                     "config_entries": device_config_entries(device)}
             if not device_is_judged(facts, loaded):
                 continue
             judged += 1

@@ -1,8 +1,10 @@
 """A deliberately badly-behaved custom integration, for the live test only.
 
-It commits the two mistakes the agent must not: it uses
-`device_registry.devices` as a mapping and reads a file in the event loop.
-The driver requires Home Assistant to log both against *this* integration.
+It commits the mistakes the agent must not: it uses
+`device_registry.devices` as a mapping, reads a device's deprecated
+`config_entries` (reported from 2026.10), and reads a file in the event loop.
+The driver requires Home Assistant to log each against *this* integration on
+the versions that report it.
 Without that, "no warning about dartec_ha_manager" could pass because the
 warning's wording changed, or because detection is off in this image, rather
 than because the agent is clean.
@@ -31,6 +33,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             _LOGGER.info("canary: mapping access returned %s devices", count)
         except Exception:  # noqa: BLE001 — the log line is what is being tested
             _LOGGER.exception("canary: mapping access raised")
+        try:
+            for device in dr.async_get(hass).devices:
+                if not isinstance(device, str):  # before 2026.9 iteration yields ids
+                    _LOGGER.info("canary: config_entries %s", device.config_entries)
+                    break
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("canary: config_entries read raised")
         try:
             with open(Path(__file__).with_name("manifest.json"), encoding="utf-8") as handle:
                 handle.read()

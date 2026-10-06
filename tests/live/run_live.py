@@ -29,8 +29,13 @@ For each Home Assistant version given, this:
    checks the agent's `offline_devices` and `batteries` sections report
    exactly what Home Assistant was told — no more, no less — and that every
    device row carries `available` and `last_seen` to match;
-9. checks the log: nothing reported against `dartec_ha_manager`, in
-   particular no device-registry mapping deprecation and no blocking read of
+9. asks Home Assistant for its Arabic state words the way the frontend does
+   (`arabic_states_check.py`) and checks the agent's formal Arabic is what
+   comes back, where Home Assistant has none of its own, and that every key
+   it corrects still exists in HA's English (dartec-ha-manager#55);
+10. checks the log: nothing reported against `dartec_ha_manager`, in
+   particular no device-registry mapping deprecation, no read of a device's
+   deprecated `config_entries` (2026.10) and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
    clean log means a clean agent, not a detector that has changed wording.
 
@@ -92,6 +97,8 @@ logger:
 # report_usage's wording (homeassistant/helpers/frame.py) and the device
 # registry's own message (helpers/device_registry.py, 2026.9).
 DEVICE_MAPPING = "uses `device_registry.devices` as a mapping"
+# 2026.10: a device belongs to one config entry; the old set is a reported shim.
+DEVICE_ENTRIES = "accesses `DeviceEntry.config_entries`"
 # homeassistant/util/loop.py, for a call made from an integration's frame.
 BLOCKING = re.compile(r"Detected blocking call to (\w+) with args (.*?) inside the event loop "
                       r"by (?:custom )?integration '([\w]+)'")
@@ -176,6 +183,7 @@ def start_container(name: str, version: str, config: Path) -> int:
     docker("cp", str(HERE / "stub_manager.py"), f"{name}:/stub_manager.py")
     docker("cp", str(HERE / "ha_registry.py"), f"{name}:/ha_registry.py")
     docker("cp", str(HERE / "device_health_setup.py"), f"{name}:/device_health_setup.py")
+    docker("cp", str(HERE / "arabic_states_check.py"), f"{name}:/arabic_states_check.py")
     docker("start", name)
     mapping = docker("port", name, "8123/tcp").strip().splitlines()[0]
     return int(mapping.rsplit(":", 1)[1])
@@ -496,22 +504,35 @@ def check_log(text: str, version: str) -> tuple[list[str], dict]:
     if not mapping_is_deprecated and canary_mapping:
         problems.append("canary's mapping access was reported on a version that should "
                         "not deprecate it; the version boundary assumption is wrong")
+    entries_are_deprecated = version_tuple(version) >= (2026, 10)
+    canary_entries = [line for line in reported[CANARY_DOMAIN] if DEVICE_ENTRIES in line]
+    if entries_are_deprecated and not canary_entries:
+        problems.append("canary's DeviceEntry.config_entries read was not reported — the "
+                        "deprecation check cannot be trusted on this image")
+    if not entries_are_deprecated and canary_entries:
+        problems.append("canary's DeviceEntry.config_entries read was reported on a version "
+                        "that should not deprecate it; the version boundary assumption is wrong")
     if not any("manifest.json" in line for line in blocking[CANARY_DOMAIN]):
         problems.append("canary's blocking open of manifest.json was not reported — the "
                         "blocking-call check cannot be trusted on this image")
 
     agent_mapping = [line for line in reported[AGENT_DOMAIN] if DEVICE_MAPPING in line]
+    agent_entries = [line for line in reported[AGENT_DOMAIN] if DEVICE_ENTRIES in line]
     agent_manifest = [line for line in blocking[AGENT_DOMAIN] if "manifest.json" in line]
     if agent_mapping:
         problems.append("agent used the device registry as a mapping:\n  "
                         + "\n  ".join(agent_mapping))
+    if agent_entries:
+        problems.append("agent read a device's deprecated config_entries (use "
+                        "registry_access.device_config_entries):\n  "
+                        + "\n  ".join(agent_entries))
     if agent_manifest:
         problems.append("agent read manifest.json in the event loop:\n  "
                         + "\n  ".join(agent_manifest))
     # Anything else Home Assistant holds against the agent is just as much a
     # future break, even if it is not one of the two this test was written for.
     others = [line for line in reported[AGENT_DOMAIN] + blocking[AGENT_DOMAIN]
-              if line not in agent_mapping and line not in agent_manifest]
+              if line not in agent_mapping + agent_entries + agent_manifest]
     if others:
         problems.append("Home Assistant reported the agent for:\n  " + "\n  ".join(others))
     errors = [line.strip() for line in text.splitlines()
@@ -519,6 +540,7 @@ def check_log(text: str, version: str) -> tuple[list[str], dict]:
     if errors:
         problems.append("agent logged errors:\n  " + "\n  ".join(errors[:20]))
     return problems, {"canary_reported": canary_mapping,
+                      "canary_entries": canary_entries,
                       "canary_blocking": blocking[CANARY_DOMAIN]}
 
 
@@ -600,6 +622,13 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: device health: {len(health.get('offline', []))} offline, "
             f"batteries {[b.get('level') for b in health.get('batteries', [])]}")
 
+        arabic = json.loads(docker("exec", name, "python3", "/arabic_states_check.py",
+                                   token).strip().splitlines()[-1])
+        problems += arabic["problems"]
+        log(f"{version}: Arabic states: {arabic['evidence']['dartec']} in Dartec's Arabic, "
+            f"{len(arabic['evidence']['ha_own_arabic'])} left as Home Assistant has them, "
+            f"{len(arabic['problems'])} problem(s)")
+
         brand_problems = check_brand(base, token, running)
         problems += brand_problems
         log(f"{version}: brand images served by Home Assistant: "
@@ -613,6 +642,7 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: Home Assistant {running}, {len(truth['devices'])} devices; "
             "canary reports seen: "
             f"{len(evidence['canary_reported'])} mapping, "
+            f"{len(evidence['canary_entries'])} config_entries, "
             f"{len(evidence['canary_blocking'])} blocking")
 
         if artifacts:

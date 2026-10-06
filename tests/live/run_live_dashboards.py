@@ -21,7 +21,13 @@ For each Home Assistant version given, this:
    Arabic ones with the account set to Arabic, so Home Assistant draws right
    to left), and fails on any error card, any "entity not available" warning
    and any view that draws no card at all;
-5. keeps every screenshot, with the evidence and Home Assistant's log, under
+5. measures, on every view, where each "°C" and "%" is drawn against its
+   number in the places Home Assistant drew "C° 22.0" in Arabic (tiles,
+   badges, heading badges, the area card, the target-temperature stepper),
+   and fails if a unit lands before its number in Arabic, if a state word
+   the agent translates is still English, or if the agent changed anything
+   in English (dartec-ha-manager#55);
+6. keeps every screenshot, with the evidence and Home Assistant's log, under
    `--artifacts` (CI uploads them as `live-dashboards-<version>`), so a person
    can look at what a release changed before the fleet takes it.
 
@@ -93,6 +99,70 @@ FIND_BROKEN = """() => {
 }"""
 
 
+# Where Home Assistant draws a value and its unit in the elements the agent's
+# right-to-left correction looks after (www/dashboard-fix.js, #55), and
+# whether the unit came out after the number. A "22.0 °C" drawn as "C° 22.0"
+# has its "C" to the left of its digits. Also: the agent's isolates and
+# stylesheet, so English can be checked for any trace of them, and one of the
+# agent's Arabic state words as the frontend has it.
+MEASURE_UNITS = r"""() => {
+  const runs = [], traces = [];
+  const RUN = /([0-9\u0660-\u0669][0-9\u0660-\u0669.,\u066B\u066C]*)[ \u00A0\u202F]?(°C|%)/g;
+  const rect = (node, start, end) => {
+    const r = document.createRange();
+    r.setStart(node, start); r.setEnd(node, end);
+    const b = r.getBoundingClientRect();
+    return b.width || b.height ? b : null;
+  };
+  const measure = (where, node) => {
+    if (node.nodeType !== 3) return;
+    if (/[\u2066-\u2069]/.test(node.data)) traces.push(where + ": " + node.data);
+    for (const m of node.data.matchAll(RUN)) {
+      const digit = rect(node, m.index, m.index + 1);
+      const end = m.index + m[0].length;
+      const unit = rect(node, end - 1, end);
+      if (!digit || !unit) continue;  // not drawn (hidden, scrolled away)
+      runs.push({where, text: m[0], after: unit.left > digit.left});
+    }
+  };
+  const walk = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      const tag = el.localName;
+      if (tag === 'state-display') el.childNodes.forEach((n) => measure(tag, n));
+      if (tag === 'ha-tile-info' && el.shadowRoot) {
+        el.shadowRoot.querySelectorAll('.secondary').forEach((line) => {
+          line.childNodes.forEach((n) => measure(tag, n));
+          [...line.children].forEach((span) => span.childNodes.forEach((n) => measure(tag, n)));
+        });
+      }
+      if (tag === 'ha-control-number-buttons' && el.shadowRoot) {
+        const box = el.shadowRoot.querySelector('.value');
+        const unit = box && box.querySelector('.unit');
+        const number = box && [...box.childNodes].find((n) => n.nodeType === 3 && /\d/.test(n.data));
+        if (el.shadowRoot.adoptedStyleSheets.length > 1) traces.push(tag + ": extra stylesheet");
+        if (number && unit && unit.offsetWidth) {
+          const d = rect(number, 0, number.data.length), u = unit.getBoundingClientRect();
+          if (d) runs.push({where: tag, text: number.data.trim() + unit.textContent,
+                            after: u.left > d.left});
+        }
+      }
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  const ha = document.querySelector('home-assistant');
+  const hass = ha && ha.hass;
+  const on = hass && hass.localize ? hass.localize('component.light.entity_component._.state.on') : null;
+  return {runs, traces, light_on: on};
+}"""
+
+# The agent's word for a light that is on, from the agent itself, and HA's English.
+sys.path.insert(0, str(REPO / "custom_components" / AGENT_DOMAIN))
+from arabic_states import ON  # noqa: E402
+
+ENGLISH_ON, ARABIC_ON = ON
+
+
 def screenshots(base: str, dashboards: list[dict], language: str, out: Path,
                 schemes: list[str], sizes: list[str]) -> tuple[list[str], list[dict]]:
     """Open every view of the dashboards in `language` at every size. The
@@ -132,9 +202,25 @@ def screenshots(base: str, dashboards: list[dict], language: str, out: Path,
                         page.goto(f"{base}/{board['url_path']}/{view}", wait_until="networkidle")
                         page.wait_for_timeout(2500)
                         state = page.evaluate(FIND_BROKEN)
+                        units = page.evaluate(MEASURE_UNITS)
                         name = f"{view}-{size}-{scheme}.png"
                         page.screenshot(path=str(folder / name))
                         where = f"{board['url_path']}/{view} at {size} ({scheme})"
+                        before = [r for r in units["runs"] if not r["after"]]
+                        if language == "ar":
+                            if before:
+                                problems.append(f"{where}: unit drawn before its number: " + "; ".join(
+                                    f"{r['where']} {r['text']!r}" for r in before[:5]))
+                            if units["light_on"] not in (None, ARABIC_ON):
+                                problems.append(f"{where}: a light that is on reads "
+                                                f"{units['light_on']!r}, not {ARABIC_ON!r}")
+                        else:
+                            if units["traces"]:
+                                problems.append(f"{where}: the right-to-left correction acted "
+                                                f"in English: {units['traces'][:3]}")
+                            if units["light_on"] not in (None, ENGLISH_ON):
+                                problems.append(f"{where}: a light that is on reads "
+                                                f"{units['light_on']!r} in English")
                         if state["found"]:
                             problems.append(f"{where}: " + "; ".join(
                                 f"{f['tag']}: {f['text']}" for f in state["found"][:5]))
@@ -145,6 +231,9 @@ def screenshots(base: str, dashboards: list[dict], language: str, out: Path,
                                             f"{state['language']!r}, not {language!r}")
                         seen.append({"view": where, "file": f"{board['url_path']}/{name}",
                                      "cards": state["cards"], "dir": state["dir"],
+                                     "units_measured": len(units["runs"]),
+                                     "units_before_number": len(before),
+                                     "light_on": units["light_on"],
                                      "console_errors": list(errors)})
                 context.close()
         browser.close()
@@ -198,7 +287,13 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
                                       sizes)
             problems += found
             shots += seen
-            log(f"{version}: {len(seen)} screenshots in {language}, {len(found)} problem(s)")
+            measured = sum(s["units_measured"] for s in seen)
+            # Nothing measured would mean the check checked nothing: the villa
+            # has temperatures on every dashboard, so that is a broken check.
+            if not measured:
+                problems.append(f"{language}: no value with a unit was found to measure")
+            log(f"{version}: {len(seen)} screenshots in {language}, {measured} values with "
+                f"a unit measured, {len(found)} problem(s)")
         evidence["screenshots"] = shots
 
         text = ha_log(name)
