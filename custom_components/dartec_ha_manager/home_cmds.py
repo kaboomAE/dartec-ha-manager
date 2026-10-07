@@ -39,6 +39,31 @@ AUTOMATION_KEYS = {"alias", "description", "triggers", "conditions", "actions",
 BLUEPRINT_AUTOMATION_KEYS = {"alias", "description", "use_blueprint"}
 
 
+THEME_NOT_LOADED = "theme_not_loaded"
+
+
+async def themes_line_present(hass: HomeAssistant) -> bool | None:
+    """Does configuration.yaml give the frontend a `themes:` key?
+
+    Read through Home Assistant's own loader, the one `frontend.reload_themes`
+    uses, so includes, packages and secrets resolve exactly as HA resolves
+    them. Read only: this integration never writes configuration.yaml. None
+    when it cannot be read, which the manager treats as "don't know".
+
+    False means the line is missing. True with the theme still not loaded
+    means the files arrived after Home Assistant last read its themes, and a
+    restart picks them up."""
+    try:
+        from homeassistant.config import async_hass_config_yaml
+
+        config = await async_hass_config_yaml(hass)
+    except Exception as err:  # noqa: BLE001 — a broken file is not ours to report here
+        _LOGGER.debug("configuration.yaml could not be read: %s", err)
+        return None
+    frontend = config.get("frontend") if isinstance(config, dict) else None
+    return isinstance(frontend, dict) and "themes" in frontend
+
+
 async def theme_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     name = (cmd.get("theme") or "").strip()
     if not name:
@@ -49,7 +74,11 @@ async def theme_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     themes_msg = await call_own_ws(hass, {"type": "frontend/get_themes"})
     available = (themes_msg.get("result") or {}).get("themes") or {}
     if name not in available:
-        return {"ok": False,
+        # `code` and `themes_line` are for the manager, which applies a new
+        # home's default theme by itself and has to tell "add the line" from
+        # "restart" without reading this sentence. The sentence is unchanged.
+        return {"ok": False, "code": THEME_NOT_LOADED,
+                "themes_line": await themes_line_present(hass),
                 "detail": f"theme '{name}' is not loaded on this home. "
                           f"Available: {sorted(available) or 'none'}. If it was just "
                           "installed via HACS, configuration.yaml needs "
