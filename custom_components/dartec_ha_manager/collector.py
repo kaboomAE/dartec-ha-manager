@@ -524,12 +524,16 @@ async def _collect_frontend_theme(hass: HomeAssistant) -> dict:
 
 
 def _collect_branding(hass: HomeAssistant) -> dict:
-    """The sidebar branding in force: whether it is on, and the name it shows."""
+    """The sidebar branding in force: whether it is on, the name it shows (and
+    to Arabic viewers), its logo, and the logos this agent can draw — so the
+    manager knows whether a home can take a new logo before sending it."""
     try:
         from . import branding
 
         config = branding._config(hass)
-        return {"enabled": bool(config.get("enabled")), "title": config.get("title")}
+        return {"enabled": bool(config.get("enabled")), "title": config.get("title"),
+                "title_ar": branding.arabic_title(config), "logo": config.get("logo"),
+                "logos": branding.logo_choices()}
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("branding collect failed: %s", err)
         return {}

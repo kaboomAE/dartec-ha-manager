@@ -217,7 +217,7 @@ def _changeable(target: dict) -> None:
     if what == KIND_OWNER:
         raise Refused("owner", "The owner's account cannot be changed here.")
     if what == KIND_MAINTENANCE:
-        raise Refused("maintenance", "Dartec's support account is not managed here.")
+        raise Refused("maintenance", "Baytec's support account is not managed here.")
     if what == KIND_PANEL:
         raise Refused("panel", "Room panels are set up by your installer and are not "
                                "managed here.")
@@ -238,7 +238,7 @@ def check_actor(actor: dict) -> None:
     """
     if kind(actor) == KIND_MAINTENANCE:
         raise Refused("actor_maintenance",
-                      "Dartec's support account cannot manage the household.")
+                      "Baytec's support account cannot manage the household.")
     if kind(actor) == KIND_SYSTEM or not is_admin(actor):
         raise Refused("actor_not_admin", "Only people who can manage the home can do this.")
 
@@ -261,7 +261,7 @@ def clean_username(username: Any) -> str:
                       "Usernames are 2 to 32 letters, numbers, dots, dashes or "
                       "underscores, starting with a letter or number.")
     if username == MAINTENANCE_USERNAME:
-        raise Refused("username_reserved", "That username is reserved for Dartec.")
+        raise Refused("username_reserved", "That username is reserved for Baytec.")
     if username.startswith(PANEL_USERNAME_PREFIX):
         # Otherwise a person added as a regular user could later be read as a
         # room panel, and changed or removed by the manager without consent.

@@ -97,7 +97,7 @@ class DartecConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # remote can extend it.
                     commissioned = commissioning_deadline()
                     return self.async_create_entry(
-                        title=f"Dartec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
+                        title=f"Baytec: {info.get('customer_name', '')} / {info.get('instance_name', '')}",
                         data={CONF_SERVER_URL: server, CONF_PAIRING_TOKEN: token},
                         options={OPT_COMMISSIONING_UNTIL: commissioned.isoformat()},
                     )
@@ -175,7 +175,7 @@ class DartecOptionsFlow(config_entries.OptionsFlow):
             options[OPT_OFFSITE_BACKUPS] = bool(user_input.get(OPT_OFFSITE_BACKUPS))
             guarded = bool(user_input.get(OPT_GUARDED_UPDATES, True))
             if guarded != guarded_enabled(options):
-                logbook(self.hass, "Approved Home Assistant updates from Dartec turned "
+                logbook(self.hass, "Approved Home Assistant updates from Baytec turned "
                                    + ("on" if guarded else "off") + " in the options")
             options[OPT_GUARDED_UPDATES] = guarded
             # The commissioning deadline is only rewritten when the length

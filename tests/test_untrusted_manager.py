@@ -546,7 +546,7 @@ class TestHandlerRefusalsAreLogged:
             "action": "link_setup", "auth_key": "k", "login_server": "https://attacker.invalid"}))
         assert result.get("refused") is True
         assert lines and lines[-1].startswith("Refused remote command 'link_setup'")
-        assert not any(line.startswith("Dartec ran") for line in lines)
+        assert not any(line.startswith("Baytec ran") for line in lines)
 
 
 class TestTunnelSetupIsRetired:

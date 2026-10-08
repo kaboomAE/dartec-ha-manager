@@ -469,7 +469,7 @@ class TestSwap:
         hass = FakeHass({"token": OLD_TOKEN})
         send(hass, token=TOKEN, fingerprint=FP)
         assert hass.logbook() == [
-            f"Dartec updated the HACS GitHub token (fingerprint {FP}, "
+            f"Baytec updated the HACS GitHub token (fingerprint {FP}, "
             f"replacing {OLD_FP})"]
 
     def test_the_snapshot_then_reports_the_new_token(self):

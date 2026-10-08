@@ -262,7 +262,7 @@ async def _step(hass, job: dict, state: str, detail: str = "", **fields) -> None
         del history[HISTORY:]
     await _save(hass)
     # Every step, with the versions, in the homeowner's own logbook.
-    maintenance.logbook(hass, f"Dartec guarded update, {_label(job)}: "
+    maintenance.logbook(hass, f"Baytec guarded update, {_label(job)}: "
                               f"{_STATE_WORDS.get(state, state)}"
                               + (f" ({detail})" if detail else ""))
     _nudge(hass)
@@ -446,7 +446,7 @@ async def _accepted(hass, job: dict) -> None:
 async def _backing_up(hass, job: dict) -> None:
     try:
         data = await supervisor(hass, "POST", "/backups/new/full",
-                                {"name": f"Dartec before {_label(job)}"},
+                                {"name": f"Baytec before {_label(job)}"},
                                 timeout=BACKUP_TIMEOUT_S)
         slug = data.get("slug")
         if not slug:

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Baytec">
+  <title>Baytec</title>
+  <!--
+    Baytec identity, approved by the owner on 2026-10-08 (kaboomAE/smarthome-planner#141,
+    kaboomAE/dartec-ops#32). Artwork copied unchanged from smarthome-planner
+    design-system/rebrand-baytec/assets/, where build/build.mjs generates it;
+    never edit by hand. Mark geometry: docs/brand-guidelines.md §3.
+    Wordmarks are outlines (HarfBuzz over the unmodified IBM Plex Sans and
+    Lateef files); no font is carried, so this file renders the same anywhere.
+  -->
+  <g fill="none" stroke-linecap="round">
+    <g stroke="#22251f" stroke-width="5"><path d="M0 54 H10"/><path d="M54 54 H64"/></g>
+    <g stroke="#1a6b6b" stroke-width="3.6"><path d="M10 24 A30 30 0 0 1 40 54" opacity="0.5"/><path d="M10 38 A16 16 0 0 1 26 54" opacity="0.28"/></g>
+    <path d="M10 10 A44 44 0 0 1 54 54" stroke="#1a6b6b" stroke-width="4.4"/>
+    <path d="M10 54 V10" stroke="#22251f" stroke-width="7"/>
+  </g>
+</svg>

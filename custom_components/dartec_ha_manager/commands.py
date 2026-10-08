@@ -125,7 +125,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             if refusal:
                 return _refuse(hass, _describe(cmd), refusal)
             result = await _call_service(hass, cmd)
-            maintenance.logbook(hass, f"Dartec called {_describe(cmd)}")
+            maintenance.logbook(hass, f"Baytec called {_describe(cmd)}")
             return result
 
         # Guarded updates need no window: the owner's decision, with its
@@ -139,7 +139,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                 return _refuse(hass, what, refused[1], code=refused[0])
             result = await HA_UPDATE_HANDLERS[action](hass, cmd)
             if not result.get("ok"):
-                maintenance.logbook(hass, f"Dartec asked for '{what}'; not started: "
+                maintenance.logbook(hass, f"Baytec asked for '{what}'; not started: "
                                           f"{result.get('detail')}")
             return result
 
@@ -159,7 +159,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
             # did not ask, because the answer does not depend on the asking.
             return _refuse(hass, str(action),
                            f"'{action}' needs consent from this home. Ask the "
-                           "homeowner to switch 'Allow Dartec support' on, or "
+                           "homeowner to switch 'Allow Baytec support' on, or "
                            "request a window from the manager. (Pairing opens "
                            "a commissioning period that lasts until the "
                            "install is marked complete, "
@@ -212,7 +212,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                                       f"{result.get('detail')}")
             return result
         if guarded_run:
-            maintenance.logbook(hass, f"Dartec ran '{action}' as an approved update "
+            maintenance.logbook(hass, f"Baytec ran '{action}' as an approved update "
                                       "(latest release, upgrade only), without the "
                                       "maintenance switch: "
                                       f"{result.get('detail') or result.get('ok')}")
@@ -226,7 +226,7 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                    "standing": "under the standing 'unattended support' "
                                "setting on this integration"}.get(
                 granted.get("source"), "under consent from this home")
-            line = f"Dartec ran '{action}' {how}"
+            line = f"Baytec ran '{action}' {how}"
             if action in ("panel_setup", "hacs_install"):
                 # Which account, so the line means something to the household.
                 # The detail names the account and its dashboard, never the
@@ -236,23 +236,23 @@ async def execute_command(hass: HomeAssistant, cmd: dict[str, Any]) -> dict[str,
                          else f"; not done: {result.get('detail')}")
             maintenance.logbook(hass, line)
         elif action == "media_upload" and result.get("uploaded"):
-            maintenance.logbook(hass, f"Dartec added media file "
+            maintenance.logbook(hass, f"Baytec added media file "
                                       f"'{result.get('media_content_id')}'")
         elif action == "blueprint_install" and result.get("ok"):
             # Inert, so it needed no window — but a file did appear on their
             # disk, and the house keeping its own record of that is the whole
             # point of the logbook.
-            maintenance.logbook(hass, f"Dartec staged automation blueprint "
+            maintenance.logbook(hass, f"Baytec staged automation blueprint "
                                       f"'{result.get('path')}'; nothing uses it yet")
         elif action == "lovelace_update" and result.get("ok"):
             # Not consequential enough to need consent, but it is a name the
             # household reads every day changing under them.
-            maintenance.logbook(hass, f"Dartec {result.get('detail')}")
+            maintenance.logbook(hass, f"Baytec {result.get('detail')}")
         elif action in ("panel_update", "panel_remove") and result.get("ok") \
                 and not result.get("gone"):
             # Routine (service_policy.py says why), but an account in their
             # house changed or went, and that belongs in their own record.
-            maintenance.logbook(hass, f"Dartec {result.get('detail')}")
+            maintenance.logbook(hass, f"Baytec {result.get('detail')}")
         elif action == "hacs_token_set":
             # Routine, so no consent line above — but a credential in their
             # house changed, or was changed and put back, and they should be

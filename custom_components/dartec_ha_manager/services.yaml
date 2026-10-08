@@ -1,7 +1,7 @@
 allow_maintenance:
-  name: "Dartec: allow maintenance"
+  name: "Baytec: allow maintenance"
   description: >-
-    Let Dartec support perform sensitive operations in this home — locks,
+    Let Baytec support perform sensitive operations in this home — locks,
     covers, alarm, climate, switches, scenes, automations, reboots and account
     changes —
     for a limited time. Only a Home Assistant administrator can allow it.
@@ -20,16 +20,16 @@ allow_maintenance:
           mode: box
 
 complete_commissioning:
-  name: "Dartec: commissioning complete"
+  name: "Baytec: commissioning complete"
   description: >-
-    Mark the installation finished. Pairing lets Dartec perform sensitive
+    Mark the installation finished. Pairing lets Baytec perform sensitive
     operations while the home is being set up, for 30 days by default; this ends
-    that now. Afterwards Dartec needs "Allow Dartec support" switched on again,
+    that now. Afterwards Baytec needs "Allow Baytec support" switched on again,
     or unattended support enabled in this integration's options. Only ends
     access — nothing can use it to extend or reopen commissioning.
 
 end_maintenance:
-  name: "Dartec: end maintenance"
+  name: "Baytec: end maintenance"
   description: >-
     Close the maintenance window immediately. Routine monitoring continues;
     only sensitive operations stop being possible.

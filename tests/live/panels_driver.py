@@ -459,7 +459,7 @@ async def main(owner_token: str) -> None:
         evidence["logbook"] = [line for line in lines if "panel" in line]
         check(any("Refused remote command 'panel_setup'" in line for line in lines),
               "the refused setup is not in the logbook")
-        check(any("Dartec ran 'panel_setup'" in line and USERNAME in line for line in lines),
+        check(any("Baytec ran 'panel_setup'" in line and USERNAME in line for line in lines),
               "the setup is not in the logbook")
         check(any(f"set panel account '{USERNAME}' to dashboard '{OTHER}'" in line
                   for line in lines), "the update is not in the logbook")

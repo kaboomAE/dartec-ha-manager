@@ -9,9 +9,12 @@ the way a home that predates the rename has it, and checks the agent:
   as dartec-theme v1.0.0 named it, and only `Dartec` loaded (v1.1.0). Home
   Assistant then quietly runs its own default, so the report must say
   `DarTec` is stored, `default` is running, and `Dartec` is what exists;
-* reports the sidebar branding and its title;
-* corrects its own config entry title from "DarTec: ..." when it starts
-  (reloaded here, as at a restart), and nothing else about the entry;
+* reports the sidebar branding: its title, the Arabic name, its logo and
+  the logos it can draw (Baytec, «بيتك» and the Baytec lockup by default
+  since the rename to Baytec, 2026-10-08);
+* corrects its own config entry title from "DarTec: ..." to "Baytec: ..."
+  when it starts (reloaded here, as at a restart), and nothing else about
+  the entry;
 * renames a dashboard titled "DarTec Dashboard" through `lovelace_update`,
   sent by the stub manager as the real one would, answers with the previous
   title, and leaves a line in the household's logbook; and the next
@@ -103,18 +106,23 @@ def run_version(version: str, keep: bool, timeout: float) -> list[str]:
                             "available (a default stored under the old name, which Home "
                             "Assistant is not running)")
         branding = (first or {}).get("branding")
-        if branding != {"enabled": False, "title": "Dartec"}:
+        # The defaults since the rename (2026-10-08): Baytec, «بيتك» to Arabic
+        # viewers, the mark and the name together.
+        expected_branding = {"enabled": False, "title": "Baytec", "title_ar": "بيتك",
+                             "logo": "baytec-lockup",
+                             "logos": ["mark", "lockup", "baytec-mark", "baytec-lockup", "none"]}
+        if branding != expected_branding:
             problems.append(f"branding is {branding}, expected the defaults "
-                            "{'enabled': False, 'title': 'Dartec'}")
+                            f"{expected_branding}")
 
         staged = driver(name, token, "stage")
         log(f"{version}: staged {staged}")
         if not (staged.get("dashboard_created") and staged.get("entry_retitled")):
             problems.append(f"could not stage the old spellings: {staged}")
-        if staged.get("entry_title_after_reload") != "Dartec: Live test / Integration rig":
+        if staged.get("entry_title_after_reload") != "Baytec: Live test / Integration rig":
             problems.append(f"after a reload the agent's entry is titled "
                             f"{staged.get('entry_title_after_reload')!r}, not corrected to "
-                            "'Dartec: Live test / Integration rig'")
+                            "'Baytec: Live test / Integration rig'")
 
         send(name, {"id": "rename", "action": "lovelace_update", "url_path": DASHBOARD,
                     "title": "Dartec Dashboard"})
@@ -147,7 +155,7 @@ def run_version(version: str, keep: bool, timeout: float) -> list[str]:
         # (privacy.py, #20). What is checked here is the brand's spelling
         # and that the retitle reached the snapshot.
         if len(ours) != 1 or not re.fullmatch(
-                r"Dartec: hm_[0-9a-f]{10} / Integration rig", ours[0] or ""):
+                r"Baytec: hm_[0-9a-f]{10} / Integration rig", ours[0] or ""):
             problems.append(f"the snapshot's integration title is {ours}")
         misspelt = [f"{path}" for path in re.findall(r"Dar[ -]?Tec[^\"]*", json.dumps(
             {k: snap.get(k) for k in ("dashboards", "integrations", "branding")}))]

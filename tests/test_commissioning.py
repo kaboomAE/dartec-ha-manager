@@ -397,7 +397,7 @@ class TestItClosesWhenMarkedComplete:
         assert result["ok"] and result["changed"]
         assert maintenance.consent(hass)["allowed"] is False
         assert maintenance.commissioning(hass)["completed_by"] == "manager"
-        assert any("by the Dartec manager" in line for line in hass.logbook())
+        assert any("by the Baytec manager" in line for line in hass.logbook())
 
     def test_the_manager_needs_no_consent_to_close(self, clock):
         """Closing takes permission away, so it must work on a home that has

@@ -288,7 +288,7 @@ _ENVELOPE_KEYS = frozenset({"type", "id", "action"})
 OPT_GUARDED_UPDATES = "guarded_updates"
 # What the homeowner sees. It covers the Dartec agent too since 2026-09-18,
 # so it no longer says "Home Assistant" updates.
-GUARDED_SWITCH_NAME = "Allow Dartec to install approved updates"
+GUARDED_SWITCH_NAME = "Allow Baytec to install approved updates"
 
 # Stable releases only. Core is YYYY.M.patch; the OS is major.minor.
 CORE_VERSION_RE = re.compile(r"^20\d{2}\.(?:1[0-2]|[1-9])\.\d{1,3}$")
@@ -403,7 +403,7 @@ def check_opt_in(cmd: dict, options: dict) -> str | None:
         return None
     return (f"'{cmd.get('action')}' is refused: offsite backup copies are off "
             "for this home. Someone at the home can turn on 'Copy backups "
-            "offsite to Dartec' in this integration's options in Home "
+            "offsite to Baytec' in this integration's options in Home "
             "Assistant. The maintenance window does not stand in for it.")
 
 
@@ -541,7 +541,7 @@ def check_call_service(cmd: dict[str, Any], *, maintenance_open: bool) -> str | 
                 "service_policy.py if it is genuinely needed")
     if tier == "sensitive" and not maintenance_open:
         return (f"{pair} needs an open maintenance window. Ask the homeowner to "
-                "run 'Dartec: allow maintenance' in Home Assistant.")
+                "run 'Baytec: allow maintenance' in Home Assistant.")
     return validate_target(domain, service, service_data)
 
 

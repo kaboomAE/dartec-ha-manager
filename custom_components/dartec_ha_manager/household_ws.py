@@ -335,7 +335,7 @@ def _gate(hass: HomeAssistant, connection, msg: dict) -> HouseholdStore | None:
     loaded = any(entry.state is ConfigEntryState.LOADED
                  for entry in hass.config_entries.async_entries(DOMAIN))
     if data is None or not loaded:
-        _refuse(connection, msg, "not_loaded", "The Dartec integration is not running.")
+        _refuse(connection, msg, "not_loaded", "The Baytec integration is not running.")
         return None
     token = hass.auth.async_get_refresh_token(connection.refresh_token_id) \
         if connection.refresh_token_id else None
