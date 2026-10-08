@@ -1,6 +1,11 @@
-# Dartec HA Manager — Agent
+# Baytec HA Manager — Agent
 
-The Home Assistant integration that links an HA instance to [Dartec HA Manager](https://manager.dartec.ae), Dartec's centralized fleet-management dashboard for smart homes.
+> **Baytec (formerly Dartec).** The brand is now Baytec / «بيتك» (2026-10-08). What
+> the homeowner sees says Baytec; the integration domain `dartec_ha_manager`,
+> entity ids, service names, the `/dartec_branding/` paths and the dartec.ae
+> hosts stay as they are, because installed homes depend on them.
+
+The Home Assistant integration that links an HA instance to [Baytec HA Manager](https://manager.dartec.ae), Baytec's centralized fleet-management dashboard for smart homes.
 
 > **Maintaining this integration?** See [HANDOVER.md](HANDOVER.md) — module
 > map, the release process (HACS installs *Releases*, not tags), CI, and the
