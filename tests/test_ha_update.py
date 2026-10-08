@@ -576,7 +576,7 @@ class TestGuardedAgentUpdate:
         home = Home(tmp_path, monkeypatch, options={"guarded_updates": False})
         result, _ = home.send(agent_cmd())
         assert result["refused"] and result["code"] == "consent" and not ran
-        assert "Allow Dartec to install approved updates" in result["detail"]
+        assert "Allow Baytec to install approved updates" in result["detail"]
 
     @pytest.mark.parametrize("extra", [{"allow_downgrade": True}, {"force": True},
                                        {"repo": "someone/else"}, {"restart": "yes"}])

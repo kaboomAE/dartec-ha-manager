@@ -76,8 +76,9 @@ async def main(token: str, step: str) -> dict:
                     "dashboard_title": next((d.get("title") for d in dashboards["result"]
                                              if d.get("url_path") == DASHBOARD), None),
                     "logbook": [f"{row.get('name')}: {row.get('message')}" for row in logbook
-                                if "Dartec" in str(row.get("message") or "")
-                                or "Dartec" in str(row.get("name") or "")]}
+                                if any(brand in str(row.get("message") or "")
+                                       or brand in str(row.get("name") or "")
+                                       for brand in ("Baytec", "Dartec"))]}
         finally:
             await ws.close()
 

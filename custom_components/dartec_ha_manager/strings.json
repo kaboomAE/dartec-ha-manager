@@ -2,57 +2,57 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Dartec HA Manager",
-        "description": "Enter the enrolment code from the Dartec admin panel for this home. A pairing token also works.",
+        "title": "Connect to Baytec HA Manager",
+        "description": "Enter the enrolment code from the Baytec admin panel for this home. A pairing token also works.",
         "data": {
-          "server_url": "Dartec server URL",
+          "server_url": "Baytec server URL",
           "pairing_token": "Enrolment code or pairing token"
         }
       }
     },
     "error": {
-      "invalid_token": "Unknown pairing token — generate an enrolment code in the Dartec admin panel.",
-      "invalid_code": "Unknown enrolment code. Check it was typed correctly, or generate a new one in the Dartec admin panel.",
-      "code_expired": "This enrolment code has expired. Generate a new one in the Dartec admin panel.",
-      "code_used": "This enrolment code has already been used. Generate a new one in the Dartec admin panel.",
-      "code_revoked": "This enrolment code was revoked. Generate a new one in the Dartec admin panel.",
-      "wrong_instance": "This enrolment code is for a different home than the one this Home Assistant is paired to. Check the code, or remove the existing Dartec integration first.",
+      "invalid_token": "Unknown pairing token — generate an enrolment code in the Baytec admin panel.",
+      "invalid_code": "Unknown enrolment code. Check it was typed correctly, or generate a new one in the Baytec admin panel.",
+      "code_expired": "This enrolment code has expired. Generate a new one in the Baytec admin panel.",
+      "code_used": "This enrolment code has already been used. Generate a new one in the Baytec admin panel.",
+      "code_revoked": "This enrolment code was revoked. Generate a new one in the Baytec admin panel.",
+      "wrong_instance": "This enrolment code is for a different home than the one this Home Assistant is paired to. Check the code, or remove the existing Baytec integration first.",
       "rate_limited": "Too many failed attempts from this network. Wait a few minutes and try again.",
-      "enrolment_unsupported": "This Dartec server does not accept enrolment codes. Use a pairing token instead.",
-      "cannot_connect": "Could not reach the Dartec server. Check the URL and internet connection.",
+      "enrolment_unsupported": "This Baytec server does not accept enrolment codes. Use a pairing token instead.",
+      "cannot_connect": "Could not reach the Baytec server. Check the URL and internet connection.",
       "insecure_url": "The server URL must start with https:// — the pairing token is the key to this home and must not travel over an unencrypted connection."
     },
     "abort": {
-      "already_configured": "This instance is already paired with Dartec HA Manager.",
+      "already_configured": "This instance is already paired with Baytec HA Manager.",
       "repaired": "This home was already paired. Its credential has been replaced with the new one and the integration reloaded."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Dartec HA Manager options",
-        "description": "Consent for Dartec, decided on this home only — Dartec cannot change any of these. Unattended support and offsite copies are off unless you turn them on. Approved Home Assistant updates are on unless you turn them off.",
+        "title": "Baytec HA Manager options",
+        "description": "Consent for Baytec, decided on this home only — Baytec cannot change any of these. Unattended support and offsite copies are off unless you turn them on. Approved Home Assistant updates are on unless you turn them off.",
         "data": {
-          "unattended_support": "Allow Dartec support without the maintenance switch",
-          "offsite_backups": "Copy backups offsite to Dartec",
+          "unattended_support": "Allow Baytec support without the maintenance switch",
+          "offsite_backups": "Copy backups offsite to Baytec",
           "commissioning_days": "Commissioning period (days)",
           "restart_commissioning": "Start a new commissioning period now",
-          "guarded_updates": "Allow Dartec to install approved updates"
+          "guarded_updates": "Allow Baytec to install approved updates"
         },
         "data_description": {
-          "unattended_support": "Dartec may operate locks, covers, the alarm and restarts without someone switching 'Allow Dartec support' on first.",
-          "offsite_backups": "Dartec may copy this home's backups, including its configuration and history, to Dartec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch.",
+          "unattended_support": "Baytec may operate locks, covers, the alarm and restarts without someone switching 'Allow Baytec support' on first.",
+          "offsite_backups": "Baytec may copy this home's backups, including its configuration and history, to Baytec's storage, on a schedule and with nobody at home. Deleting backups still needs the maintenance switch.",
           "commissioning_days": "How long commissioning lasts after pairing, 30 by default. Changing it moves the deadline of a period that is still running; it does not reopen one that has ended.",
           "restart_commissioning": "Opens commissioning for the period above, starting now, even if it was already marked complete or has expired.",
-          "guarded_updates": "Dartec may update Home Assistant and its operating system to a version it has tested, and this Dartec integration to its latest release, without the maintenance switch, so security fixes are not held up. A full backup is taken first, the home is checked afterwards, and an unhealthy update is rolled back. Each step is written to the logbook. Turning this off stops the next update; one already under way still finishes or rolls back."
+          "guarded_updates": "Baytec may update Home Assistant and its operating system to a version it has tested, and this Baytec integration to its latest release, without the maintenance switch, so security fixes are not held up. A full backup is taken first, the home is checked afterwards, and an unhealthy update is rolled back. Each step is written to the logbook. Turning this off stops the next update; one already under way still finishes or rolls back."
         }
       }
     }
   },
   "services": {
     "allow_maintenance": {
-      "name": "Dartec: allow maintenance",
-      "description": "Let Dartec support perform sensitive operations (locks, covers, alarm, switches, scenes, automations, reboots, account changes) for a limited time. Only a Home Assistant administrator can allow it. Everything done is logged.",
+      "name": "Baytec: allow maintenance",
+      "description": "Let Baytec support perform sensitive operations (locks, covers, alarm, switches, scenes, automations, reboots, account changes) for a limited time. Only a Home Assistant administrator can allow it. Everything done is logged.",
       "fields": {
         "minutes": {
           "name": "Duration",
@@ -61,11 +61,11 @@
       }
     },
     "complete_commissioning": {
-      "name": "Dartec: commissioning complete",
-      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (30 days unless set otherwise in the integration's options); afterwards sensitive operations need 'Allow Dartec support' switched on again."
+      "name": "Baytec: commissioning complete",
+      "description": "Mark the installation finished. Ends the commissioning period that pairing opened (30 days unless set otherwise in the integration's options); afterwards sensitive operations need 'Allow Baytec support' switched on again."
     },
     "end_maintenance": {
-      "name": "Dartec: end maintenance",
+      "name": "Baytec: end maintenance",
       "description": "Close the maintenance window immediately."
     }
   }

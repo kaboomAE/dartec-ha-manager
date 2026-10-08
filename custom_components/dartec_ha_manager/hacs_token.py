@@ -322,14 +322,14 @@ def logbook_line(result: dict) -> str | None:
     old = result.get("previous_fingerprint") or "none"
     reason = result.get("reason")
     if result.get("ok") and result.get("changed"):
-        return (f"Dartec updated the HACS GitHub token (fingerprint {fp}, "
+        return (f"Baytec updated the HACS GitHub token (fingerprint {fp}, "
                 f"replacing {old})")
     if reason == "rolled_back":
-        return (f"Dartec tried to update the HACS GitHub token (fingerprint "
+        return (f"Baytec tried to update the HACS GitHub token (fingerprint "
                 f"{fp}), but HACS did not load with it, so the previous token "
                 f"(fingerprint {old}) was restored")
     if reason == "reload_failed":
-        return (f"Dartec tried to update the HACS GitHub token (fingerprint "
+        return (f"Baytec tried to update the HACS GitHub token (fingerprint "
                 f"{fp}); HACS did not load, and restoring the previous token "
                 f"(fingerprint {old}) did not bring it back. HACS needs "
                 "checking")

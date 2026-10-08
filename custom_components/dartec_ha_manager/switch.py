@@ -77,7 +77,7 @@ class MaintenanceSwitch(SwitchEntity):
     # no bearing on the entity id, which is set outright below — turning it off
     # was tried and changed the id not at all.
     _attr_has_entity_name = True
-    _attr_name = "Allow Dartec support"
+    _attr_name = "Allow Baytec support"
     _attr_icon = "mdi:account-wrench"
     # Nothing to poll: the window is in memory and announces its own changes.
     _attr_should_poll = False
@@ -94,8 +94,8 @@ class MaintenanceSwitch(SwitchEntity):
         self._attr_unique_id = f"{entry.entry_id}_allow_dartec_support"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name="Dartec HA Manager",
-            manufacturer="Dartec",
+            name="Baytec HA Manager",
+            manufacturer="Baytec",
         )
 
     @property
@@ -170,7 +170,7 @@ class GuardedUpdatesSwitch(SwitchEntity):
             return
         self.hass.config_entries.async_update_entry(
             self._entry, options={**self._entry.options, OPT_GUARDED_UPDATES: value})
-        maintenance.logbook(self.hass, "Approved updates from Dartec "
+        maintenance.logbook(self.hass, "Approved updates from Baytec "
                                        f"turned {'on' if value else 'off'} here")
         self.async_write_ha_state()
 

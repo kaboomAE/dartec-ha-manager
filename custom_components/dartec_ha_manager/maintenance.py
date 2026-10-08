@@ -80,7 +80,7 @@ SIGNAL_UPDATE = f"{DOMAIN}_maintenance_updated"
 # What the homeowner sees and touches. Named as an instruction rather than a
 # state ("Allow Dartec support" reads as a thing you grant) because the whole
 # point is that someone who has never opened Developer Tools can work it.
-SWITCH_NAME = "Allow Dartec support"
+SWITCH_NAME = "Allow Baytec support"
 
 ALLOW_SCHEMA = vol.Schema({
     vol.Optional("minutes", default=DEFAULT_MINUTES):
@@ -327,7 +327,7 @@ def complete_commissioning(hass: HomeAssistant, by: str) -> dict:
         OPT_COMMISSIONING_COMPLETED_AT: _now().isoformat(),
         OPT_COMMISSIONING_COMPLETED_BY: by})
     _cancel_commissioning_expiry(hass)
-    who = "by the Dartec manager" if by == "manager" else "on this home"
+    who = "by the Baytec manager" if by == "manager" else "on this home"
     logbook(hass, f"Commissioning marked complete {who}. Sensitive operations "
                   f"now need '{SWITCH_NAME}' switched on")
     _LOGGER.info("Commissioning marked complete (%s)", by)
@@ -340,7 +340,7 @@ def logbook(hass: HomeAssistant, message: str) -> None:
     """Write one line into the homeowner's own logbook."""
     try:
         hass.bus.async_fire("logbook_entry", {
-            "name": "Dartec HA Manager", "message": message, "domain": DOMAIN})
+            "name": "Baytec HA Manager", "message": message, "domain": DOMAIN})
     except Exception as err:  # noqa: BLE001 — auditing must never break a command
         _LOGGER.debug("Could not write logbook entry: %s", err)
 
@@ -458,10 +458,10 @@ def open_window(hass: HomeAssistant, minutes: int = DEFAULT_MINUTES) -> dict:
     minutes = max(1, min(int(minutes), MAX_MINUTES))
     until = _now() + timedelta(minutes=minutes)
     _store(hass)[_STATE_KEY] = until
-    logbook(hass, f"Maintenance window opened for {minutes} minutes — Dartec "
+    logbook(hass, f"Maintenance window opened for {minutes} minutes — Baytec "
                   "support may now perform sensitive operations")
-    _notify(hass, "Dartec support access is on",
-            f"Dartec can now operate locks, covers, the alarm and restarts in "
+    _notify(hass, "Baytec support access is on",
+            f"Baytec can now operate locks, covers, the alarm and restarts in "
             f"your home. This ends by itself in {minutes} minutes.\n\n"
             f"To end it now, switch **{SWITCH_NAME}** off.")
     _schedule_expiry(hass, until)
@@ -503,7 +503,7 @@ async def require_admin(hass: HomeAssistant, context) -> None:
 
     user = await hass.auth.async_get_user(user_id)
     if user is None or not user.is_active or not user.is_admin:
-        logbook(hass, "Refused a request to allow Dartec support: only someone "
+        logbook(hass, "Refused a request to allow Baytec support: only someone "
                       "who manages this home can allow it")
         raise Unauthorized(context=context)
 
@@ -547,14 +547,14 @@ def request_window(hass: HomeAssistant, reason: str = "") -> dict:
     """The cloud asking the homeowner to open a window. Raises a notification
     in the house; grants nothing."""
     detail = f"\n\nWhy: {reason}" if reason else ""
-    _notify(hass, "Dartec is asking for permission",
-            "Dartec support wants to operate locks, covers, the alarm or "
+    _notify(hass, "Baytec is asking for permission",
+            "Baytec support wants to operate locks, covers, the alarm or "
             f"restarts in your home.{detail}"
             f"\n\nTo allow it, switch **{SWITCH_NAME}** on. It turns itself "
             f"off again after {DEFAULT_MINUTES} minutes, and you can switch it "
             "off sooner at any time.\n\nIf you were not expecting this, "
             "leave it off — nothing happens until you allow it.")
-    logbook(hass, f"Dartec support requested a maintenance window. {reason}".strip())
+    logbook(hass, f"Baytec support requested a maintenance window. {reason}".strip())
     return {"ok": True, "detail": "the homeowner has been asked to open a window",
             **status(hass)}
 
