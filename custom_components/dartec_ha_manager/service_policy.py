@@ -162,7 +162,7 @@ RETIRED_ACTIONS = {
     # through whichever Cloudflare account the token in the command belonged
     # to. `tunnel_status` and `tunnel_stop` remain, so an existing tunnel can
     # still be found and taken down.
-    "tunnel_setup": ("Cloudflare tunnels are retired; Dartec Link replaces "
+    "tunnel_setup": ("Cloudflare tunnels are retired; Baytec Link replaces "
                      "them. 'tunnel_status' and 'tunnel_stop' still work, to "
                      "find and take down a tunnel this home already has."),
 }
