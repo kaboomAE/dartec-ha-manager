@@ -1,8 +1,9 @@
 # Dartec HA Manager Agent — Handover
 
 **Written**: 2026-08-27 · **Repo**: `kaboomAE/dartec-ha-manager` (**public**)
-**Current version**: 0.25.0, released 2026-10-06 (the owner's go, kaboomAE/dartec-ops#23),
-before its bench check on Home Assistant 2026.10, which is still owed
+**Current version**: 0.26.0, released 2026-10-09 (the owner's go, kaboomAE/dartec-ops#32): the Baytec
+rename, with the sidebar mark and name (#79) and theme_not_loaded's code and themes_line (#78). It
+follows 0.25.0 (2026-10-06, kaboomAE/dartec-ops#23), whose bench check on Home Assistant 2026.10 is still owed
 
 The [README](README.md) is for people installing this. This document is for
 whoever maintains it. The manager side has its own handover in the private
