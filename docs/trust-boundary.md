@@ -47,7 +47,7 @@ field on an old one, follows the rules below. Code review checks them.
    routine.
 6. **Consent is checked at the moment of the action.** It is read from the home
    when the command arrives, never from the command. A command that spends
-   minutes installing before it changes anything (Dartec Link) asks again
+   minutes installing before it changes anything (Baytec Link) asks again
    right before the change (`maintenance.consent_ended`).
 7. **Only a Home Assistant administrator can grant consent.** The
    `allow_maintenance` service, the *Allow Dartec support* switch and turning
@@ -65,7 +65,7 @@ field on an old one, follows the rules below. Code review checks them.
    rather than repaired.
 10. **A capability that cannot be made safe is retired, not gated.** The
     Cloudflare tunnel took a token that decided whose account the home was
-    published through, and nothing on the home could check it; Dartec Link
+    published through, and nothing on the home could check it; Baytec Link
     replaced it, so `tunnel_setup` is in `service_policy.RETIRED_ACTIONS` and
     refused before consent is read.
 

@@ -109,8 +109,8 @@ install rather than a number somebody remembered to update in two places.
   or label, and calls on this integration's own switches: those are yours.
 - The agent does not trust the manager, so a compromised manager is not a
   compromised home: backup copies go to, and files come from, only
-  `manager.dartec.ae` over https; Dartec Link joins only
-  `headscale.dartec.ae`; every size and id in a command is checked before it
+  `manager.dartec.ae` over https; Baytec Link (formerly Dartec Link) joins
+  only `headscale.dartec.ae`; every size and id in a command is checked before it
   is used. The rules are in [the trust boundary](docs/trust-boundary.md).
 - Every command executed or refused is written to **your own logbook**, so the
   record of what Dartec did in your home lives in your system, not only ours.

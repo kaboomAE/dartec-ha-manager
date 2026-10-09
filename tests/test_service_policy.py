@@ -246,6 +246,7 @@ class TestTheHomesOwnControls:
                                   maintenance_open=True) is None  # allowed with consent...
         refusal = check_own_entities(data, {"switch.allow_dartec_support"})
         assert refusal and "controlled only from this home" in refusal  # ...but ours
+        assert "belongs to the Baytec HA Manager integration" in refusal
 
     def test_inside_a_target_block_and_in_a_list(self):
         from service_policy import check_own_entities

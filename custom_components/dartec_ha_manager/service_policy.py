@@ -558,6 +558,6 @@ def check_own_entities(service_data: dict[str, Any], own_entity_ids) -> str | No
     own = {str(e).strip().lower() for e in own_entity_ids}
     hit = sorted({e.strip().lower() for e in _targets(service_data)} & own)
     if hit:
-        return (f"refused: {', '.join(hit)} belongs to the Dartec integration and "
-                "is controlled only from this home")
+        return (f"refused: {', '.join(hit)} belongs to the Baytec HA Manager "
+                "integration and is controlled only from this home")
     return None
