@@ -15,9 +15,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
                        / "dartec_ha_manager"))
 
-from device_health import (EXPECTED_OFFLINE_LABEL, battery_reading,  # noqa: E402
+from device_health import (EXPECTED_OFFLINE_LABEL,  # noqa: E402
+                           LEGACY_EXPECTED_OFFLINE_LABEL, battery_reading,
                            device_is_judged, device_offline, device_presence,
-                           summarize_batteries)
+                           expected_offline, summarize_batteries)
+
+# "Baytec expected offline", and the Dartec-era label homes already carry.
+BOTH_LABELS = pytest.mark.parametrize("label", [
+    pytest.param("baytec_expected_offline", id="baytec"),
+    pytest.param("dartec_expected_offline", id="dartec-still-works")])
 
 
 class TestReadingABattery:
@@ -108,10 +114,37 @@ class TestCallingADeviceOffline:
         assert device_offline([entity(state="on", disabled=True),
                                entity()]) is not None
 
-    def test_a_labelled_entity_does_not_count(self):
-        assert device_offline([entity(labels=(EXPECTED_OFFLINE_LABEL,))]) is None
-        assert device_offline([entity(labels=(EXPECTED_OFFLINE_LABEL,)),
+    @BOTH_LABELS
+    def test_a_labelled_entity_does_not_count(self, label):
+        assert device_offline([entity(labels=(label,))]) is None
+        assert device_offline([entity(labels=(label,)),
                                entity(state="on")]) is None
+        assert device_offline([entity(labels=(label,)), entity()]) is not None,             "an unlabelled dead entity beside it still counts"
+
+
+class TestTheExpectedOfflineLabel:
+    def test_the_label_to_create_is_the_baytec_one(self):
+        assert EXPECTED_OFFLINE_LABEL == "baytec_expected_offline"
+        assert LEGACY_EXPECTED_OFFLINE_LABEL == "dartec_expected_offline"
+
+    @BOTH_LABELS
+    def test_either_label_opts_out(self, label):
+        assert expected_offline([label])
+        assert expected_offline({"living_room", label})
+
+    def test_neither_label_and_no_labels(self):
+        assert not expected_offline(None)
+        assert not expected_offline(())
+        assert not expected_offline(["expected_offline", "baytec", "dartec"])
+
+    @pytest.mark.parametrize("brand", ["baytec", "dartec"])
+    def test_both_follow_one_rule_the_label_id(self, brand):
+        """Matched by label id, which HA makes from the name (lowercase,
+        underscores). A name, or an id typed in another case, is not an id."""
+        assert expected_offline([f"{brand}_expected_offline"])
+        assert not expected_offline([f"{brand.capitalize()} expected offline"])
+        assert not expected_offline([f"{brand.upper()}_EXPECTED_OFFLINE"])
+        assert not expected_offline([f" {brand}_expected_offline "])
 
 
 class TestWhichDevicesAreJudged:
@@ -135,8 +168,9 @@ class TestWhichDevicesAreJudged:
     def test_one_running_entry_is_enough(self):
         assert device_is_judged({"config_entries": {"entry-1", "entry-2"}}, self.LOADED)
 
-    def test_the_label_opts_a_device_out(self):
-        assert not device_is_judged({"labels": {EXPECTED_OFFLINE_LABEL},
+    @BOTH_LABELS
+    def test_the_label_opts_a_device_out(self, label):
+        assert not device_is_judged({"labels": {label},
                                      "config_entries": {"entry-1"}}, self.LOADED)
 
 
@@ -179,10 +213,10 @@ class TestPresence:
             {"domain": "sensor", "state": None, "disabled": False}])
         assert (available, last_seen) == (None, None)
 
-    def test_the_expected_offline_label_does_not_hide_a_fact(self):
+    @BOTH_LABELS
+    def test_the_expected_offline_label_does_not_hide_a_fact(self, label):
         """The label stops alerts; it does not make a dead device answer."""
-        available, _ = device_presence([self.entity("unavailable",
-                                                    labels=(EXPECTED_OFFLINE_LABEL,))])
+        available, _ = device_presence([self.entity("unavailable", labels=(label,))])
         assert available is False
 
     def test_it_agrees_with_device_offline(self):

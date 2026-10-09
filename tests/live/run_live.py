@@ -24,7 +24,8 @@ For each Home Assistant version given, this:
    REST API lists, that the entities outside the registry are exactly the ones
    the snapshot reports as unregistered, and that its digest is the
    snapshot's (dartec-ha-manager-server#16);
-8. takes demo devices down, labels one as expected-offline and drains a
+8. takes demo devices down, labels two as expected-offline (one with the
+   Baytec label, one with the old Dartec label) and drains a
    battery through Home Assistant's own APIs (`device_health_setup.py`), and
    checks the agent's `offline_devices` and `batteries` sections report
    exactly what Home Assistant was told — no more, no less — and that every
@@ -353,7 +354,7 @@ def check_device_health(name: str, token: str, timeout: float) -> tuple[list[str
     offline = {row["device_id"]: row for row in snap.get("offline_devices") or []}
     if set(offline) != set(truth["offline"]):
         problems.append(f"offline_devices are {sorted(offline)}, expected exactly "
-                        f"{truth['offline']} (not the labelled or half-down device, not "
+                        f"{truth['offline']} (not the two labelled devices or the half-down one, not "
                         "Push's never-pressed button, not the Backup service)")
     if snap.get("offline_count") != len(truth["offline"]):
         problems.append(f"offline_count {snap.get('offline_count')} != {len(truth['offline'])}")
@@ -383,6 +384,7 @@ def check_device_health(name: str, token: str, timeout: float) -> tuple[list[str
     rows = {row.get("id"): row for row in snap.get("devices") or []}
     presence = {}
     for device_id, expected in ((offline_id, False), (truth["labelled"], False),
+                                (truth["labelled_legacy"], False),
                                 (truth["half_down"], True)):
         row = rows.get(device_id) or {}
         presence[device_id] = (row.get("available"), row.get("last_seen"))
