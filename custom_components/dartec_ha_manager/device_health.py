@@ -30,10 +30,14 @@ state is `unavailable` or `unknown`. What is left out, and why:
 4. A device whose integration is not loaded. A disabled integration is
    deliberate, and a failed one is already its own alert; a second alert per
    device would bury it.
-5. Anything carrying the label `dartec_expected_offline` (create a label named
-   "Dartec expected offline" in Home Assistant). The escape hatch for a
+5. Anything carrying the label `baytec_expected_offline` (create a label named
+   "Baytec expected offline" in Home Assistant). The escape hatch for a
    seasonal device — pool pump in winter, Christmas lights — on the device to
-   skip it, or on one entity to stop that entity counting.
+   skip it, or on one entity to stop that entity counting. The old label,
+   `dartec_expected_offline` ("Dartec expected offline"), still works, so no
+   home has to relabel anything. Both are matched the same way: by label id,
+   which Home Assistant makes from the name when the label is created —
+   lowercased, spaces as underscores. Renaming a label later keeps its id.
 
 `unknown` counts as down alongside `unavailable`: an integration that cannot
 reach a device often reports its last-known state as unknown. The stateless
@@ -62,7 +66,12 @@ STATELESS_DOMAINS = frozenset({
     "conversation", "wake_word", "ai_task", "image",
 })
 DOWN_STATES = frozenset({"unavailable", "unknown"})
-EXPECTED_OFFLINE_LABEL = "dartec_expected_offline"
+# The label to create, and the Dartec-era one homes already have. Either opts
+# a device or entity out; a manager that only knows the old one is unaffected,
+# since the exclusion happens here, before offline_devices is sent.
+EXPECTED_OFFLINE_LABEL = "baytec_expected_offline"
+LEGACY_EXPECTED_OFFLINE_LABEL = "dartec_expected_offline"
+EXPECTED_OFFLINE_LABELS = frozenset({EXPECTED_OFFLINE_LABEL, LEGACY_EXPECTED_OFFLINE_LABEL})
 
 # Phones and tablets charge every night and are not part of the installation;
 # a companion app's battery sensor would alert every evening.
@@ -138,6 +147,11 @@ def summarize_batteries(readings: Iterable[dict]) -> list[dict]:
     return sorted(by_device.values(), key=_sort_key)
 
 
+def expected_offline(labels: Iterable[str] | None) -> bool:
+    """Whether a device's or entity's label ids include either opt-out label."""
+    return not EXPECTED_OFFLINE_LABELS.isdisjoint(labels or ())
+
+
 def device_offline(entities: Iterable[dict]) -> str | None:
     """The ISO time the device went down, or None if it is not offline.
 
@@ -148,7 +162,7 @@ def device_offline(entities: Iterable[dict]) -> str | None:
     judged = [e for e in entities
               if not e.get("disabled") and e.get("state") is not None
               and e.get("domain") not in STATELESS_DOMAINS
-              and EXPECTED_OFFLINE_LABEL not in (e.get("labels") or ())]
+              and not expected_offline(e.get("labels"))]
     if not judged or any(e["state"] not in DOWN_STATES for e in judged):
         return None
     changed = [e.get("last_changed") for e in judged if e.get("last_changed")]
@@ -188,7 +202,7 @@ def device_is_judged(device: dict, loaded_entries: set[str]) -> bool:
     """Whether a device can be called offline at all (rules 1, 2, 4, 5)."""
     if device.get("disabled") or device.get("entry_type") == "service":
         return False
-    if EXPECTED_OFFLINE_LABEL in (device.get("labels") or ()):
+    if expected_offline(device.get("labels")):
         return False
     entries = device.get("config_entries") or ()
     # No config entry at all is a device another integration created by hand;

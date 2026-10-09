@@ -40,7 +40,7 @@ Ranked by benefit to the family first, then by effort. Each section says whether
 
 - **Where:** Manager: `blueprint._usable` drops `state == unavailable`; overview blueprint
 - **Problem:** A device that is unavailable when the dashboard is published is left out of it. On the bench the kids' room lost its light and air-quality sensor without a trace, until the next publish after it came back. A family sees a room with a light missing and no reason; support cannot tell broken from never-installed.
-- **Change:** Keep unavailable entities on room dashboards (the tile shows “Unavailable” with HA's warning mark). Add an `entity-filter` card titled “Needs attention” (state `unavailable`, `show_empty: false`) to the home overview. Keep leaving out devices labelled `Dartec expected offline`.
+- **Change:** Keep unavailable entities on room dashboards (the tile shows “Unavailable” with HA's warning mark). Add an `entity-filter` card titled “Needs attention” (state `unavailable`, `show_empty: false`) to the home overview. Keep leaving out devices labelled `Baytec expected offline` (the old `Dartec expected offline` label still works).
 - **Evidence:** [layout.md#crowded-rooms-offline-devices-and-odd-names](layout.md#crowded-rooms-offline-devices-and-odd-names)
 - **Benefit:** High: failures are visible to the family and to support. **Effort:** S. **Risk:** Low: a device removed for good stays listed until it is removed from HA, which is itself worth seeing.
 - **Issue:** [#45](https://github.com/kaboomAE/dartec-ha-manager/issues/45)

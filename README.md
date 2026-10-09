@@ -31,7 +31,7 @@ install rather than a number somebody remembered to update in two places.
 ## What it does
 
 - Opens a single **outbound** encrypted WebSocket to the Dartec cloud — no port forwarding, no VPN, no exposed services.
-- Sends a health snapshot every 60 seconds: HA version, integrations and their states, add-ons (HA OS), HACS repositories, automations, dashboards, critical logs, host metrics, battery levels, and devices that have stopped answering (summarised on the home — see `device_health.py` for what counts as offline, and label a device `Dartec expected offline` in Home Assistant to leave it out).
+- Sends a health snapshot every 60 seconds: HA version, integrations and their states, add-ons (HA OS), HACS repositories, automations, dashboards, critical logs, host metrics, battery levels, and devices that have stopped answering (summarised on the home — see `device_health.py` for what counts as offline, and label a device `Baytec expected offline` in Home Assistant to leave it out; the old `Dartec expected offline` label still works).
 - Adds **My Home** to the sidebar for the people who manage the home: add family and guests, set a new password, pause or remove someone, and choose the dashboard each person sees first, in English or Arabic. It works entirely inside your home, under your own Home Assistant sign-in; Dartec cannot use it and only learns how many people have each role. See the [My Home guide](docs/my-home/README.md).
 - Reads properly in **Arabic**: shows formal Arabic for the state words Home Assistant's Arabic still leaves in English ("On" becomes «مُشغَّل», "Cool" «تبريد», "Open" «مفتوح»), only where Home Assistant has no Arabic of its own, and keeps a temperature reading "22.0 °C" rather than "C° 22.0" in right-to-left layouts. Nothing changes in English. See [Arabic and right-to-left](docs/dashboards/arabic-rtl.md#arabic-state-words).
 - Executes a small **allowlisted** set of remote commands. The allowlist is
@@ -109,8 +109,8 @@ install rather than a number somebody remembered to update in two places.
   or label, and calls on this integration's own switches: those are yours.
 - The agent does not trust the manager, so a compromised manager is not a
   compromised home: backup copies go to, and files come from, only
-  `manager.dartec.ae` over https; Dartec Link joins only
-  `headscale.dartec.ae`; every size and id in a command is checked before it
+  `manager.dartec.ae` over https; Baytec Link (formerly Dartec Link) joins
+  only `headscale.dartec.ae`; every size and id in a command is checked before it
   is used. The rules are in [the trust boundary](docs/trust-boundary.md).
 - Every command executed or refused is written to **your own logbook**, so the
   record of what Dartec did in your home lives in your system, not only ours.

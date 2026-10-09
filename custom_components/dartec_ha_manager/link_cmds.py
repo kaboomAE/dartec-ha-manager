@@ -145,11 +145,11 @@ async def link_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     addon = await _find_addon(hass)
     if addon is None:
         return {"ok": True, "supported": True, "installed": False,
-                "detail": "Dartec Link is not available in the store here"}
+                "detail": "Baytec Link is not available in the store here"}
     if not addon.get("installed"):
         return {"ok": True, "supported": True, "installed": False,
                 "slug": addon.get("slug"),
-                "detail": "Dartec Link is in the store but not installed"}
+                "detail": "Baytec Link is in the store but not installed"}
 
     info = await _supervisor(hass, "GET", f"/addons/{addon['slug']}/info")
     info_data = _data(info)
@@ -159,7 +159,7 @@ async def link_status(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
             "version": info_data.get("version"),
             "node_name": options.get("hostname") or "",
             "login_server": options.get("login_server") or "",
-            "detail": f"Dartec Link {info_data.get('state')}"}
+            "detail": f"Baytec Link {info_data.get('state')}"}
 
 
 async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
@@ -181,12 +181,12 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     # allowlist, never copied from the command.
     login_server = canonical_login_server(cmd.get("login_server"))
     if login_server is None:
-        return {**_fail(f"refused login_server {cmd.get('login_server')!r}: Dartec Link "
+        return {**_fail(f"refused login_server {cmd.get('login_server')!r}: Baytec Link "
                         f"joins only {', '.join(sorted(LINK_HOSTS))}, over https"),
                 "refused": True}
     if not os.environ.get("SUPERVISOR_TOKEN"):
         return _fail("this home has no Supervisor (Container/Core install), "
-                     "so the Dartec Link add-on cannot be installed")
+                     "so the Baytec Link add-on cannot be installed")
 
     addon = await _find_addon(hass)
     if addon is None:
@@ -211,7 +211,7 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         addon = await _find_addon(hass, tries=12, delay=5.0)
         if addon is None:
             detail = await _store_diagnostics(hass)
-            return _fail(f"Dartec Link did not appear in the store after adding "
+            return _fail(f"Baytec Link did not appear in the store after adding "
                          f"its repository. {detail}")
 
     slug = addon["slug"]
@@ -236,12 +236,12 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     # something asks for an update. Not fatal if it fails: an older but working
     # add-on beats refusing to proceed.
     if addon.get("installed") and addon.get("update_available"):
-        _LOGGER.info("Dartec Link %s -> %s", addon.get("version"),
+        _LOGGER.info("Baytec Link %s -> %s", addon.get("version"),
                      addon.get("version_latest"))
         updated = await _supervisor(hass, "POST", f"/store/addons/{slug}/update",
                                     timeout=900)
         if updated.get("status") != 200:
-            _LOGGER.warning("Dartec Link update failed, continuing on the "
+            _LOGGER.warning("Baytec Link update failed, continuing on the "
                             "installed version: %s", updated.get("body"))
 
     if not addon.get("installed"):
@@ -322,13 +322,13 @@ async def link_setup(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
                 if line.strip())
         except Exception:  # noqa: BLE001
             tail = "(could not read the add-on log)"
-        return _fail(f"Dartec Link did not stay running (state: {state}). "
+        return _fail(f"Baytec Link did not stay running (state: {state}). "
                      f"Add-on log: {tail}")
 
     running = _data(await _supervisor(hass, "GET", f"/addons/{slug}/info"))
     return {"ok": True, "node_name": node_name,
             "addon_version": running.get("version"),
-            "detail": f"Dartec Link {running.get('version')} running, "
+            "detail": f"Baytec Link {running.get('version')} running, "
                       f"joined {login_server}"}
 
 
@@ -341,12 +341,12 @@ async def link_stop(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     """
     addon = await _find_addon(hass)
     if addon is None or not addon.get("installed"):
-        return _fail("Dartec Link is not installed on this home")
+        return _fail("Baytec Link is not installed on this home")
     stopped = await _supervisor(hass, "POST", f"/addons/{addon['slug']}/stop",
                                 timeout=120)
     if stopped.get("status") != 200:
         return _fail(f"stop failed: {stopped.get('body')}")
-    return {"ok": True, "detail": "Dartec Link stopped; this home has left the mesh"}
+    return {"ok": True, "detail": "Baytec Link stopped; this home has left the mesh"}
 
 
 HANDLERS = {"link_status": link_status, "link_setup": link_setup,

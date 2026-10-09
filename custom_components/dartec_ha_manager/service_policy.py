@@ -162,7 +162,7 @@ RETIRED_ACTIONS = {
     # through whichever Cloudflare account the token in the command belonged
     # to. `tunnel_status` and `tunnel_stop` remain, so an existing tunnel can
     # still be found and taken down.
-    "tunnel_setup": ("Cloudflare tunnels are retired; Dartec Link replaces "
+    "tunnel_setup": ("Cloudflare tunnels are retired; Baytec Link replaces "
                      "them. 'tunnel_status' and 'tunnel_stop' still work, to "
                      "find and take down a tunnel this home already has."),
 }
@@ -558,6 +558,6 @@ def check_own_entities(service_data: dict[str, Any], own_entity_ids) -> str | No
     own = {str(e).strip().lower() for e in own_entity_ids}
     hit = sorted({e.strip().lower() for e in _targets(service_data)} & own)
     if hit:
-        return (f"refused: {', '.join(hit)} belongs to the Dartec integration and "
-                "is controlled only from this home")
+        return (f"refused: {', '.join(hit)} belongs to the Baytec HA Manager "
+                "integration and is controlled only from this home")
     return None

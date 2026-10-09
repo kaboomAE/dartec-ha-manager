@@ -565,7 +565,8 @@ class TestTunnelSetupIsRetired:
             "action": "tunnel_setup", "tunnel_token": "eyJhIjoiYXR0YWNrZXIifQ==",
             "hostname": "home.attacker.example"}))
         assert result.get("refused") is True and result.get("code") == "retired"
-        assert "Dartec Link" in result["detail"]
+        assert "Baytec Link" in result["detail"]
+        assert "Dartec Link" not in result["detail"]
         assert session.requests == []
         assert lines and lines[-1].startswith("Refused remote command 'tunnel_setup'")
 
@@ -833,6 +834,7 @@ class TestLinkLoginServer:
     def test_only_dartec_headscale_is_joined(self, supervisor, login_server):
         result = run(link_cmds.link_setup(FakeHass(), self._cmd(login_server)))
         assert result.get("refused") is True
+        assert "Baytec Link joins only" in result["detail"]
         assert supervisor == []
 
     @pytest.mark.parametrize("login_server", [
@@ -844,6 +846,16 @@ class TestLinkLoginServer:
         options = next(body["options"] for method, path, body in supervisor
                        if path.endswith("/options"))
         assert options["login_server"] == "https://headscale.dartec.ae"
+        # The add-on's store name is Baytec Link; its slug stays dartec_link.
+        assert result["detail"].startswith("Baytec Link 1 running")
+        addon_paths = [path for _, path, _ in supervisor if path.startswith("/addons/")]
+        assert addon_paths and all(path.startswith("/addons/abcd1234_dartec_link/")
+                                   for path in addon_paths)
+
+    def test_link_stop_names_baytec_link(self, supervisor):
+        result = run(link_cmds.link_stop(FakeHass(), {"action": "link_stop"}))
+        assert result == {"ok": True,
+                          "detail": "Baytec Link stopped; this home has left the mesh"}
 
     def test_consent_is_asked_again_before_enrolling(self, supervisor, monkeypatch):
         """The install can take minutes; a home that says no meanwhile is obeyed."""

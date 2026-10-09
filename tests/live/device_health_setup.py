@@ -11,7 +11,10 @@ The demo's entities are static, so a state written here stays written:
 - `sensor.outside_humidity` goes unavailable: its device has no other entity,
   so it is **offline**.
 - `cover.kitchen_window` goes unavailable too, but its device carries the
-  `dartec_expected_offline` label: **not reported**.
+  `baytec_expected_offline` label: **not reported**.
+- `cover.hall_window` goes unavailable, and its device carries the old
+  `dartec_expected_offline` label, which homes labelled before the Baytec
+  rename still have: **not reported** either.
 - `sensor.outside_temperature` goes unavailable while the same device's
   battery sensor keeps answering: **not offline** — one dead entity is not a
   dead device.
@@ -35,8 +38,9 @@ import sys
 import aiohttp
 
 BASE = "http://127.0.0.1:8123"
-LABEL_NAME = "Dartec expected offline"
-LABEL_ID = "dartec_expected_offline"
+# Created by name, as an installer would; Home Assistant makes the id.
+LABELS = {"cover.kitchen_window": ("Baytec expected offline", "baytec_expected_offline"),
+          "cover.hall_window": ("Dartec expected offline", "dartec_expected_offline")}
 
 
 async def main(token: str) -> None:
@@ -72,14 +76,16 @@ async def main(token: str) -> None:
         def device_of(entity_id: str) -> str:
             return entities[entity_id]["device_id"]
 
-        label = await call("config/label_registry/create", name=LABEL_NAME)
-        if label["label_id"] != LABEL_ID:
-            raise SystemExit(f"label id is {label['label_id']}, expected {LABEL_ID}")
-        await call("config/device_registry/update",
-                   device_id=device_of("cover.kitchen_window"), labels=[LABEL_ID])
+        for entity_id, (name, label_id) in LABELS.items():
+            label = await call("config/label_registry/create", name=name)
+            if label["label_id"] != label_id:
+                raise SystemExit(f"label id is {label['label_id']}, expected {label_id}")
+            await call("config/device_registry/update",
+                       device_id=device_of(entity_id), labels=[label_id])
 
         await set_state("sensor.outside_humidity", "unavailable")
         await set_state("cover.kitchen_window", "unavailable")
+        await set_state("cover.hall_window", "unavailable")
         await set_state("sensor.outside_temperature", "unavailable")
         await set_state("sensor.carbon_dioxide_battery", "4")
         async with session.post(f"{BASE}/api/states/sensor.yaml_battery", json={
@@ -116,11 +122,13 @@ async def main(token: str) -> None:
         print(json.dumps({
             "offline": [device_of("sensor.outside_humidity")],
             "not_offline": [device_of("cover.kitchen_window"),
+                            device_of("cover.hall_window"),
                             device_of("sensor.outside_temperature")],
             # For the per-device `available` flag: the labelled device is still
             # unreachable (the label silences alerts, it does not change the
             # fact), and the half-down one is still answering.
             "labelled": device_of("cover.kitchen_window"),
+            "labelled_legacy": device_of("cover.hall_window"),
             "half_down": device_of("sensor.outside_temperature"),
             "batteries": batteries,
         }))
