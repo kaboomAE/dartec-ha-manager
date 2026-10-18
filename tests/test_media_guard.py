@@ -198,6 +198,7 @@ class FakeHass:
     UniFi access point, every one carrying what a real one carries."""
 
     def __init__(self):
+        self.data = {}
         self.registry = [
             reg("camera.front_door", "unifiprotect", "aa11_0", "cam"),
             reg("sensor.front_door_recording_mode", "unifiprotect", "aa11_recording_mode",

@@ -21,6 +21,17 @@ over https, and never follows a redirect: the URL is in the command, and a
 home's whole configuration must not go wherever a compromised manager points
 it (GHSA-v9pc-vw88-p798). The backup and agent ids are checked before they
 are put into Home Assistant's download URL.
+
+**No media folder, in anything Baytec makes or takes** (the owner's
+decision, 2026-10-18; media_guard.py). Home Assistant's `media` folder is
+where a household's own automations save camera snapshots and clips, and
+Baytec never sees a picture from a home. So a backup Baytec starts leaves it
+out and cannot be asked to include it; setting the automatic schedule takes
+it out of the automatic backups too; and a backup that contains it is never
+copied offsite, whoever made it. `backup_list` says which backups contain it
+(`includes_media`), so staff can see that before asking for a copy. What a
+backup's Home Assistant part holds (`/config`, including `/config/www`) is
+Home Assistant's own and cannot be split; see the manager's docs/37.
 """
 from __future__ import annotations
 
@@ -52,6 +63,21 @@ def _fail(msg: str) -> dict:
     return {"ok": False, "detail": msg}
 
 
+# Home Assistant's folders a Baytec backup may include. `media` is left out
+# on purpose and refused if asked for: see the module docstring.
+MEDIA_FOLDER = "media"
+DEFAULT_FOLDERS = ("share", "ssl")
+
+
+def includes_media(backup: dict) -> bool:
+    """Whether a backup, as Home Assistant describes it, holds the media folder."""
+    return MEDIA_FOLDER in [str(f).lower() for f in backup.get("folders") or []]
+
+
+def without_media(folders) -> list[str]:
+    return [f for f in (folders or []) if str(f).lower() != MEDIA_FOLDER]
+
+
 def _error_text(result: dict, what: str) -> str:
     error = result.get("error") or {}
     return f"{what} failed: {error.get('message') or error.get('code') or 'unknown error'}"
@@ -67,6 +93,9 @@ def _summarise(backup: dict) -> dict:
         "with_automatic_settings": backup.get("with_automatic_settings"),
         "agent_ids": list((backup.get("agents") or {}).keys()),
         "failed_agent_ids": backup.get("failed_agent_ids") or [],
+        "folders": [str(f) for f in backup.get("folders") or []],
+        # Never copied offsite (backup_upload refuses it).
+        "includes_media": includes_media(backup),
     }
 
 
@@ -125,8 +154,14 @@ async def backup_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     # the whole request if they are present ("Addons and folders are not
     # supported by core backup"), so a Container install must not send them.
     if _has_supervisor():
+        folders = cmd.get("include_folders") or list(DEFAULT_FOLDERS)
+        if not isinstance(folders, list) or not all(isinstance(f, str) for f in folders):
+            return _fail("include_folders must be a list of folder names")
+        if without_media(folders) != folders:
+            return {**_fail("refused: a Baytec backup never includes the media folder, "
+                            "where camera snapshots and clips are kept"), "refused": True}
         payload["include_all_addons"] = bool(cmd.get("include_all_addons", True))
-        payload["include_folders"] = cmd.get("include_folders") or ["share", "ssl", "media"]
+        payload["include_folders"] = folders
     if cmd.get("name"):
         payload["name"] = str(cmd["name"])[:100]
     if cmd.get("password"):
@@ -163,6 +198,18 @@ async def backup_schedule(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if recurrence != "never" and not agent_ids:
         return _fail("this home has no backup location configured")
 
+    # The automatic backups keep whatever folders the household chose, less
+    # the media folder (see the module docstring). Supervisor installs only:
+    # core backup has no folders.
+    # Sent only when it changes something, so a failed read never wipes them.
+    folders: dict[str, Any] = {}
+    if _has_supervisor():
+        current = await call_own_ws(hass, {"type": "backup/config/info"})
+        chosen = (((current.get("result") or {}).get("config") or {})
+                  .get("create_backup") or {}).get("include_folders")
+        if chosen and without_media(chosen) != list(chosen):
+            folders = {"include_folders": without_media(chosen) or None}
+
     schedule: dict[str, Any] = {"recurrence": recurrence}
     if recurrence == "custom_days":
         schedule["days"] = cmd.get("days") or ["sun"]
@@ -176,7 +223,8 @@ async def backup_schedule(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         "create_backup": {"agent_ids": agent_ids,
                           "include_database": bool(cmd.get("include_database", True)),
                           # Supervisor-only, same as in backup_create above.
-                          **({"include_all_addons": True} if _has_supervisor() else {})},
+                          **({"include_all_addons": True, **folders}
+                             if _has_supervisor() else {})},
         "retention": {"copies": cmd.get("keep_copies", 3), "days": cmd.get("keep_days")},
     }
     result = await call_own_ws(hass, payload)
@@ -214,6 +262,11 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if not details.get("success"):
         return _fail(_error_text(details, "backup details"))
     backup = (details.get("result") or {}).get("backup") or {}
+    if includes_media(backup):
+        return {**_fail(f"refused: '{backup.get('name') or backup_id}' includes the media "
+                        "folder, where camera snapshots and clips are kept, and is never "
+                        "copied offsite. Take a Baytec backup (it leaves media out) and "
+                        "copy that."), "refused": True}
     # Core backups report no size in backup/details (only Supervisor ones do),
     # so this pre-check is best-effort. The manager enforces a hard byte
     # ceiling on the receiving end, which is what actually bounds this.

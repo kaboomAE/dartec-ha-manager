@@ -36,18 +36,21 @@ monitor target, which may keep its last value while the line is down. So the
 internet state is read, in order of trust, from:
 
 1. any `binary_sensor` carrying the label `baytec_internet` (create a label
-   named "Baytec internet" and put it on, say, a Ping (ICMP) sensor aimed at
-   1.1.1.1): `on` is up. Brand-neutral, and the one source that reliably
-   says "down";
-2. the UniFi WAN latency sensors, when an installer has enabled them: a
+   named "Baytec internet" and put it on, say, a Ping (ICMP) sensor): `on` is
+   up. An installer's explicit choice, so it wins;
+2. the agent's own check (internet_watch.py), on every home, whatever its
+   equipment: up, down, or `blocked` when the probes fail while Baytec is
+   reachable;
+3. the UniFi WAN latency sensors, when an installer has enabled them: a
    number is up; all of a WAN's targets `unavailable`/`unknown` is down;
-3. otherwise unknown.
+4. otherwise unknown.
 
-And whatever it says, an internet outage with no second WAN takes the home
-off the manager altogether, since the agent reaches Baytec over that same
-line: the manager sees the home go offline, not "internet down". What the
-snapshot can report is a failover to a second WAN, a down line while a
-backup line carries the home, and when the internet last came back.
+An internet outage with no second WAN takes the home off the manager, since
+the agent reaches Baytec over that same line. The agent's check keeps a
+record of every outage in the house and reports it when the line is back
+(`internet.agent.outages`), so the manager can say why the home went quiet.
+The WAN rows are sent whatever the source, so a failover to a second line is
+still seen.
 
 Labels: a device carrying `baytec_expected_offline` (device_health.py) is
 still listed, marked `expected_offline`, and the manager does not alert on it.
@@ -267,9 +270,17 @@ ADAPTERS: dict[str, Callable[[list[dict], dict[str, dict]], dict]] = {
 }
 
 
-def internet_state(labelled: list[dict], wans: list[dict]) -> dict:
+def internet_state(labelled: list[dict], wans: list[dict], agent: dict | None = None) -> dict:
     """The internet as the common shape reports it. See the module docstring
-    for the order of trust."""
+    for the order of trust. `agent` is internet_watch's report, carried along
+    whatever decides the state, for its record of outages."""
+    out = _internet_state(labelled, wans, agent)
+    if agent is not None:
+        out["agent"] = agent
+    return out
+
+
+def _internet_state(labelled: list[dict], wans: list[dict], agent: dict | None) -> dict:
     checks = [f for f in labelled if f.get("domain") == "binary_sensor"
               and not f.get("disabled") and f.get("state") in ("on", "off")]
     if checks:
@@ -278,6 +289,9 @@ def internet_state(labelled: list[dict], wans: list[dict]) -> dict:
         return {"state": "up" if up else "down", "source": "label",
                 "since": max((f.get("last_changed") or "" for f in deciding), default="") or None,
                 "checks": len(checks), "wans": wans}
+    if agent and agent.get("state") in ("up", "down"):
+        return {"state": agent["state"], "source": "agent", "since": agent.get("since"),
+                "checks": 0, "wans": wans}
     if wans:
         if any(w["state"] == "up" for w in wans):
             state = "up"
@@ -291,9 +305,10 @@ def internet_state(labelled: list[dict], wans: list[dict]) -> dict:
 
 
 def summarize(entities: list[dict], devices: dict[str, dict],
-              labelled: list[dict]) -> dict | None:
-    """The `network` section, or None when no adapter found anything and no
-    internet check is labelled (nothing to say, so nothing is sent)."""
+              labelled: list[dict], agent: dict | None = None) -> dict | None:
+    """The `network` section, or None when no adapter found anything, no
+    internet check is labelled and the agent's own check has not run yet
+    (nothing to say, so nothing is sent)."""
     rows, wlans, wans, adapters = [], [], [], []
     for platform, adapter in ADAPTERS.items():
         if not any(f.get("platform") == platform for f in entities):
@@ -303,7 +318,7 @@ def summarize(entities: list[dict], devices: dict[str, dict],
         rows += part["devices"]
         wlans += part["wlans"]
         wans += part["wans"]
-    if not adapters and not labelled:
+    if not adapters and not labelled and agent is None:
         return None
     order = {role: i for i, role in enumerate(ROLES)}
     rows.sort(key=lambda r: (order.get(r["role"], 9), str(r.get("name") or "")))
@@ -311,7 +326,7 @@ def summarize(entities: list[dict], devices: dict[str, dict],
     return {
         "version": NETWORK_VERSION,
         "adapters": adapters,
-        "internet": internet_state(labelled, wans),
+        "internet": internet_state(labelled, wans, agent),
         "device_count": len(rows),
         "devices": rows[:MAX_DEVICES],
         "wlans": wlans[:MAX_WLANS],
@@ -325,12 +340,12 @@ def collect(hass) -> dict:
     like every collector: a failure sends `{"network": {"error": ...}}`, so the
     manager can tell "no network equipment" from "could not read it"."""
     try:
-        from . import ha_facts
+        from . import ha_facts, internet_watch
 
         entities = ha_facts.entity_facts(hass, ADAPTERS)
         labelled = ha_facts.labelled_facts(hass, (INTERNET_LABEL,))
         devices = ha_facts.device_facts(hass, (f["device_id"] for f in entities))
-        section = summarize(entities, devices, labelled)
+        section = summarize(entities, devices, labelled, internet_watch.current(hass))
         return {"network": section} if section else {}
     except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
         _LOGGER.debug("network collect failed: %s", err)

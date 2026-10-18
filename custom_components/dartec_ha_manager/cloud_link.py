@@ -37,18 +37,29 @@ class CloudLink:
         self.connected = False
         self._nudge = asyncio.Event()
         self._unsub_nudge = None
+        # Set when the agent's internet check sees the line come back, so a
+        # home reconnects at once instead of after a backoff of up to five
+        # minutes (internet_watch.py).
+        self._wake = asyncio.Event()
+        self._unsub_wake = None
 
     def start(self) -> None:
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
+        from .internet_watch import SIGNAL_INTERNET_BACK
+
         self._unsub_nudge = async_dispatcher_connect(
             self._hass, SIGNAL_SNAPSHOT_NOW, self._nudge.set)
+        self._unsub_wake = async_dispatcher_connect(
+            self._hass, SIGNAL_INTERNET_BACK, self._wake.set)
         self._task = self._hass.async_create_background_task(self._run(), name="dartec_cloud_link")
 
     async def stop(self) -> None:
         self._stopping = True
         if self._unsub_nudge:
             self._unsub_nudge()
+        if self._unsub_wake:
+            self._unsub_wake()
         if self._task:
             self._task.cancel()
             try:
@@ -78,8 +89,12 @@ class CloudLink:
                 _LOGGER.warning("Dartec cloud link lost (%s); retrying in %ss", err, backoff)
             except asyncio.CancelledError:
                 raise
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, RECONNECT_MAX_S)
+            self._wake.clear()
+            try:
+                await asyncio.wait_for(self._wake.wait(), backoff)
+                backoff = RECONNECT_MIN_S       # the line is back: start afresh
+            except asyncio.TimeoutError:
+                backoff = min(backoff * 2, RECONNECT_MAX_S)
 
     async def _outbound_snapshot(self) -> dict:
         """The snapshot as the manager may see it: household names hidden.

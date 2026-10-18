@@ -38,7 +38,9 @@ For each Home Assistant version given, this:
    that nothing the agent sent carries a picture: Home Assistant gives each
    camera an `entity_picture` with a live token, and neither the token nor a
    camera proxy URL may appear anywhere in a snapshot (owner's rule,
-   2026-10-18; media_guard.py);
+   2026-10-18; media_guard.py); and that the agent's own internet check
+   (internet_watch.py) reports, from inside the container, with no network
+   equipment to read;
 11. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation, no read of a device's
    deprecated `config_entries` (2026.10) and no blocking read of
@@ -483,10 +485,24 @@ def check_cameras(base: str, token: str, snapshot: dict) -> tuple[list[str], int
             problems.append(f"{entity_id} is not in the cameras section: {sorted(reported)}")
         elif row.get("online") is not True or row.get("adapter") is not None:
             problems.append(f"{entity_id} reported as {row}")
-    if "network" in snapshot:
-        problems.append(f"a home with no network equipment sent a network section: "
-                        f"{snapshot['network']}")
     return problems, len(tokens)
+
+
+def check_internet(snapshot: dict | None) -> tuple[list[str], str]:
+    """The agent's own internet check ran inside real Home Assistant and its
+    answer reached the manager. Up, or blocked if this machine's network stops
+    the probes while the stub manager answers; never missing, never "down"
+    while snapshots arrive."""
+    network = (snapshot or {}).get("network")
+    if not isinstance(network, dict):
+        return [f"no network section in the latest snapshot: {network!r}"], "missing"
+    problems = []
+    agent = (network.get("internet") or {}).get("agent") or {}
+    if agent.get("state") not in ("up", "blocked"):
+        problems.append(f"the agent's internet check says {agent!r}")
+    if network.get("devices"):
+        problems.append(f"a home with no network equipment reported {network['devices']}")
+    return problems, str(agent.get("state"))
 
 
 def check_devices(snapshot: dict, query: dict, truth: dict) -> list[str]:
@@ -680,6 +696,10 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: Arabic states: {arabic['evidence']['dartec']} in Dartec's Arabic, "
             f"{len(arabic['evidence']['ha_own_arabic'])} left as Home Assistant has them, "
             f"{len(arabic['problems'])} problem(s)")
+
+        internet_problems, internet = check_internet(latest_snapshot(name)[1])
+        problems += internet_problems
+        log(f"{version}: the agent's internet check: {internet}")
 
         brand_problems = check_brand(base, token, running)
         problems += brand_problems

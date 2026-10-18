@@ -77,7 +77,10 @@ field on an old one, follows the rules below. Code review checks them.
     `media_guard.strip` removes any picture key or camera URL from every
     snapshot and reply at the door (`cloud_link`). A new command or collector
     must not add a way round this: `tests/test_media_guard.py` scans every
-    module for camera image, stream and WebRTC calls.
+    module for camera image, stream and WebRTC calls. The same goes for
+    backups: no backup the agent starts includes the `media` folder, where
+    snapshots and clips are kept, the manager cannot ask for it, and a backup
+    that holds it is never copied offsite (`backup_cmds.py`).
 
 ## Adding a command
 
