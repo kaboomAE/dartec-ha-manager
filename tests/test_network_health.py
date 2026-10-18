@@ -204,3 +204,72 @@ class TestInternet:
                      platform="ping", labels=["baytec_internet"])
         section = n.summarize([], {}, [check])
         assert section["internet"]["state"] == "up" and section["devices"] == []
+
+
+class TestARealHome:
+    """The owner's home, read through the manager on 2026-10-18: UniFi gear
+    through UniFi Network Rules, which reports no health."""
+
+    @pytest.mark.parametrize("model, role", [
+        ("UniFi Dream Machine", "gateway"), ("U7LR", "access_point"),
+        ("U6IW", "access_point"), ("UALR6v2", "access_point"),
+        # Names other integrations give, and codes with words after them.
+        ("UniFi Dream Router", "gateway"), ("UniFi Express", "gateway"),
+        ("UDM-Pro", "gateway"), ("USW Flex Mini", "switch"), ("U6 Lite", "access_point"),
+        ("UniFi Network Video Recorder", "device")])
+    def test_its_models(self, model, role):
+        assert n.unifi_role(model, False) == role
+
+    def test_gear_with_no_adapter_is_said_so(self):
+        unadapted = [{"integration": "unifi_network_rules", "devices": 4,
+                      "models": ["UniFi Dream Machine", "U7LR", "U6IW", "UALR6v2"]}]
+        section = n.summarize([], {}, [], None, unadapted)
+        assert section["unadapted"] == unadapted and section["devices"] == []
+        assert section["adapters"] == []
+
+    def test_nothing_unadapted_is_an_empty_list(self):
+        assert n.summarize(*home(), [])["unadapted"] == []
+
+
+class TestDevicesFrom:
+    """ha_facts.devices_from, against a fake device registry."""
+
+    def run(self, devices, entries):
+        import types
+
+        AGENT = Path(__file__).resolve().parents[1] / "custom_components" / "dartec_ha_manager"
+        for name in ("homeassistant", "homeassistant.helpers"):
+            sys.modules.setdefault(name, types.ModuleType(name))
+        # 2026.9 and later: iterating the registry yields the entries.
+        registry = types.SimpleNamespace(devices=list(devices))
+        dr = types.ModuleType("homeassistant.helpers.device_registry")
+        dr.async_get = lambda hass: registry
+        sys.modules["homeassistant.helpers.device_registry"] = dr
+        sys.modules["homeassistant.helpers"].device_registry = dr
+        if "dartec_ha_manager" not in sys.modules:
+            pkg = types.ModuleType("dartec_ha_manager")
+            pkg.__path__ = [str(AGENT)]
+            sys.modules["dartec_ha_manager"] = pkg
+        from dartec_ha_manager import ha_facts
+
+        hass = types.SimpleNamespace(config_entries=types.SimpleNamespace(
+            async_entries=lambda domain=None: [types.SimpleNamespace(entry_id=k, domain=v)
+                                               for k, v in entries.items()]))
+        return ha_facts.devices_from(hass, "ubiquiti", ("unifi",))
+
+    def device(self, i, manufacturer, model, entry, disabled=None):
+        import types
+
+        return types.SimpleNamespace(id=f"d{i}", manufacturer=manufacturer, model=model,
+                                     config_entry_id=entry, primary_config_entry=entry,
+                                     config_entries={entry}, disabled_by=disabled)
+
+    def test_the_owners_home(self):
+        devices = [self.device(1, "Ubiquiti, Inc.", "UniFi Dream Machine", "e1"),
+                   self.device(2, "Ubiquiti, Inc.", "U7LR", "e1"),
+                   self.device(3, "Ubiquiti Networks", "UAL6", "e2"),
+                   self.device(4, "Signify", "Hue bridge", "e3"),
+                   self.device(5, "Ubiquiti, Inc.", "U6IW", "e1", disabled="user")]
+        found = self.run(devices, {"e1": "unifi_network_rules", "e2": "unifi", "e3": "hue"})
+        assert found == [{"integration": "unifi_network_rules", "devices": 2,
+                          "models": ["UniFi Dream Machine", "U7LR"]}]

@@ -94,14 +94,21 @@ UNIFI_OFFLINE = frozenset({"disconnected", "heartbeat_missed", "isolated",
 # The integration puts UniFi's own model code in the device registry (e.g.
 # UAL6, U7PG2, UDMPRO, USL16LP). Its device type (`uap`, `usw`, `ugw`) is not
 # exposed to Home Assistant, so the role is read from the code's prefix, and a
-# device with a WAN latency sensor is a gateway whatever its code. The table
-# is UniFi's naming and has not been checked against every model: a model it
-# does not know is shown as a "network device" and still alerts when offline.
+# device with a WAN latency sensor is a gateway whatever its code. Some
+# integrations give a product name instead ("UniFi Dream Machine"), so names
+# are read too. Checked against a real home on 2026-10-18 (U7LR, U6IW,
+# UALR6v2, "UniFi Dream Machine"); a model the table does not know is shown
+# as a "network device" and still alerts when offline.
 UNIFI_GATEWAY_PREFIXES = ("UDM", "UDR", "UCG", "UXG", "UGW", "UDW", "UX", "UCGF")
 UNIFI_AP_PREFIXES = ("U7", "U6", "UAL", "UAP", "UAE", "UHD", "UFL", "UKPW", "U2",
                      "UAC", "UMA", "E7")
 UNIFI_SWITCH_EXCLUDED = ("USP",)   # SmartPower plugs and PDUs, not switches
 UNIFI_SWITCH_PREFIXES = ("USW", "USL", "USM", "USF", "USC", "US")
+
+UNIFI_GATEWAY_NAMES = ("DREAM MACHINE", "DREAM ROUTER", "DREAM WALL", "CLOUD GATEWAY",
+                       "SECURITY GATEWAY", "NEXT-GEN GATEWAY", "EXPRESS")
+UNIFI_AP_NAMES = ("ACCESS POINT", " AP ", "NANOHD", "FLEXHD", "BEACONHD")
+UNIFI_SWITCH_NAMES = ("SWITCH",)
 
 WAN_LATENCY_RE = re.compile(r"^(?P<target>[a-z0-9]+)_(?P<wan>wan\d?)_latency-")
 
@@ -109,6 +116,15 @@ WAN_LATENCY_RE = re.compile(r"^(?P<target>[a-z0-9]+)_(?P<wan>wan\d?)_latency-")
 def unifi_role(model: str | None, has_wan: bool) -> str:
     if has_wan:
         return "gateway"
+    name = f" {(model or '').strip().upper()} "
+    if " " in name.strip():
+        # A product name, not a code: its words first, then its first word
+        # as a code ("USW Flex Mini", "U6 Lite").
+        for role, words in (("gateway", UNIFI_GATEWAY_NAMES), ("access_point", UNIFI_AP_NAMES),
+                            ("switch", UNIFI_SWITCH_NAMES)):
+            if any(word in name for word in words):
+                return role
+        model = name.split()[0]
     code = (model or "").strip().upper().replace("-", "")
     if not code:
         return "device"
@@ -305,7 +321,8 @@ def _internet_state(labelled: list[dict], wans: list[dict], agent: dict | None) 
 
 
 def summarize(entities: list[dict], devices: dict[str, dict],
-              labelled: list[dict], agent: dict | None = None) -> dict | None:
+              labelled: list[dict], agent: dict | None = None,
+              unadapted: list[dict] | None = None) -> dict | None:
     """The `network` section, or None when no adapter found anything, no
     internet check is labelled and the agent's own check has not run yet
     (nothing to say, so nothing is sent)."""
@@ -318,7 +335,7 @@ def summarize(entities: list[dict], devices: dict[str, dict],
         rows += part["devices"]
         wlans += part["wlans"]
         wans += part["wans"]
-    if not adapters and not labelled and agent is None:
+    if not adapters and not labelled and agent is None and not unadapted:
         return None
     order = {role: i for i, role in enumerate(ROLES)}
     rows.sort(key=lambda r: (order.get(r["role"], 9), str(r.get("name") or "")))
@@ -332,6 +349,10 @@ def summarize(entities: list[dict], devices: dict[str, dict],
         "wlans": wlans[:MAX_WLANS],
         "clients": {"wireless": sum(wireless) if wireless else None,
                     "per_device_sensors": sum(1 for r in rows if r.get("clients_sensor"))},
+        # Network equipment that is in Home Assistant through an integration
+        # with no adapter, so none of its health can be read
+        # (ha_facts.devices_from). The manager says which integration to add.
+        "unadapted": list(unadapted or []),
     }
 
 
@@ -345,7 +366,9 @@ def collect(hass) -> dict:
         entities = ha_facts.entity_facts(hass, ADAPTERS)
         labelled = ha_facts.labelled_facts(hass, (INTERNET_LABEL,))
         devices = ha_facts.device_facts(hass, (f["device_id"] for f in entities))
-        section = summarize(entities, devices, labelled, internet_watch.current(hass))
+        unadapted = ha_facts.devices_from(hass, "ubiquiti", ADAPTERS)
+        section = summarize(entities, devices, labelled, internet_watch.current(hass),
+                            unadapted)
         return {"network": section} if section else {}
     except Exception as err:  # noqa: BLE001 — never lose a snapshot over it
         _LOGGER.debug("network collect failed: %s", err)

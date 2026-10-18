@@ -199,6 +199,7 @@ class FakeHass:
 
     def __init__(self):
         self.data = {}
+        self.config_entries = types.SimpleNamespace(async_entries=lambda domain=None: [])
         self.registry = [
             reg("camera.front_door", "unifiprotect", "aa11_0", "cam"),
             reg("sensor.front_door_recording_mode", "unifiprotect", "aa11_recording_mode",
@@ -248,12 +249,13 @@ class FakeHass:
                  "wlan": "Home Wi-Fi"}
         self.devices = {d: types.SimpleNamespace(
             id=d, name=n, name_by_user=None, manufacturer="x", model="UAL6" if d == "ap" else "m",
-            sw_version="1", area_id=None, labels=set(), disabled_by=None,
+            sw_version="1", area_id=None, labels=set(), disabled_by=None, config_entry_id=None,
             entry_type="service" if d == "wlan" else None) for d, n in names.items()}
 
     def install(self):
         entities = types.SimpleNamespace(entities={r.entity_id: r for r in self.registry})
-        devices = types.SimpleNamespace(async_get=self.devices.get)
+        devices = types.SimpleNamespace(async_get=self.devices.get,
+                                        devices=list(self.devices.values()))
         areas = types.SimpleNamespace(async_list_areas=lambda: [])
         er = _stub("homeassistant.helpers.entity_registry", async_get=lambda h: entities)
         dr = _stub("homeassistant.helpers.device_registry", async_get=lambda h: devices)

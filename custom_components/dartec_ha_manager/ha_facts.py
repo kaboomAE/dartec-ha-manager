@@ -103,6 +103,38 @@ def labelled_facts(hass, label_ids: Iterable[str]) -> list[dict]:
     return [f for f in entity_facts(hass, platforms) if wanted & set(f["labels"])]
 
 
+def devices_from(hass, manufacturer: str, adapted: Iterable[str]) -> list[dict]:
+    """Devices of one manufacturer that arrive through an integration with no
+    adapter: {"integration", "devices", "models"} per integration.
+
+    UniFi equipment can be in Home Assistant through an integration that
+    reports none of its health (the owner's home, 2026-10-18: UniFi Network
+    Rules, which manages firewall rules, port forwards and Wi-Fi, and has no
+    device state, clients or firmware). Saying so is what lets the manager
+    tell staff which integration to add, rather than show an empty panel."""
+    from homeassistant.helpers import device_registry as dr
+
+    from .registry_access import all_devices, device_config_entries
+
+    domains = {entry.entry_id: entry.domain for entry in hass.config_entries.async_entries()}
+    adapted = set(adapted)
+    wanted = manufacturer.lower()
+    found: dict[str, dict] = {}
+    for device in all_devices(dr.async_get(hass)):
+        if wanted not in str(device.manufacturer or "").lower() or device.disabled_by is not None:
+            continue
+        integrations = {domains.get(entry) for entry in device_config_entries(device)} - {None}
+        if not integrations or integrations & adapted:
+            continue
+        for integration in sorted(integrations):
+            row = found.setdefault(integration, {"integration": integration, "devices": 0,
+                                                 "models": []})
+            row["devices"] += 1
+            if device.model and device.model not in row["models"]:
+                row["models"].append(str(device.model)[:40])
+    return sorted(found.values(), key=lambda r: r["integration"])
+
+
 def device_facts(hass, device_ids: Iterable[str]) -> dict[str, dict]:
     """The devices these entities belong to, by id."""
     from homeassistant.helpers import area_registry as ar
