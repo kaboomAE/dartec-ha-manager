@@ -45,7 +45,9 @@ def entity_facts(hass, platforms: Iterable[str] | None = None,
 
     `platforms` selects by integration (`unifi`, `unifiprotect`); `domains`
     adds every entity of those domains whatever its integration, which is how
-    the generic camera adapter finds cameras of brands with no adapter.
+    the generic camera adapter finds cameras of brands with no adapter. For
+    `domains` it also adds the ones Home Assistant runs outside its registry
+    (no `unique_id`: a YAML camera), with no platform, device or unique id.
     """
     from homeassistant.helpers import entity_registry as er
 
@@ -68,10 +70,27 @@ def entity_facts(hass, platforms: Iterable[str] | None = None,
             "labels": sorted(getattr(reg, "labels", None) or ()),
             "state": state.state if state is not None else None,
             "last_changed": _iso(state.last_changed) if state is not None else None,
-            "attributes": {k: attributes.get(k) for k in ALLOWED_ATTRIBUTES
-                           if attributes.get(k) is not None},
+            "attributes": _allowed(attributes),
         })
+    if wanted_domains:
+        registered = {reg.entity_id for reg in er.async_get(hass).entities.values()}
+        for state in hass.states.async_all(tuple(wanted_domains)):
+            if state.entity_id in registered:
+                continue
+            facts.append({
+                "entity_id": state.entity_id, "domain": state.domain, "platform": None,
+                "unique_id": "", "translation_key": None, "device_id": None,
+                "disabled": False, "labels": [], "state": state.state,
+                "last_changed": _iso(state.last_changed),
+                "attributes": _allowed(state.attributes),
+            })
     return facts
+
+
+def _allowed(attributes) -> dict:
+    """Only the attributes in ALLOWED_ATTRIBUTES, and only plain values."""
+    return {k: attributes.get(k) for k in ALLOWED_ATTRIBUTES
+            if isinstance(attributes.get(k), (str, int, float, bool))}
 
 
 def labelled_facts(hass, label_ids: Iterable[str]) -> list[dict]:

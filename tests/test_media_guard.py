@@ -229,7 +229,20 @@ class FakeHass:
                                              entity_picture=f"/api/image_proxy/image.qr?token={TOKEN}"),
             "sensor.home_wifi": state("12"),
         }
-        self.states = types.SimpleNamespace(get=self._states.get)
+        # A YAML camera: run by Home Assistant, not in its registry.
+        self._states["camera.yaml_gate"] = types.SimpleNamespace(
+            entity_id="camera.yaml_gate", domain="camera", state="idle",
+            attributes={"entity_picture": PROXY.replace("front_door", "yaml_gate"),
+                        "access_token": TOKEN, "friendly_name": "YAML gate"},
+            last_changed="2026-10-18T08:00:00+00:00")
+
+        def async_all(domains=None):
+            wanted = (domains,) if isinstance(domains, str) else tuple(domains or ())
+            return [types.SimpleNamespace(entity_id=e, domain=e.split(".")[0], **vars(s))
+                    if not hasattr(s, "entity_id") else s
+                    for e, s in self._states.items()
+                    if not wanted or e.split(".")[0] in wanted]
+        self.states = types.SimpleNamespace(get=self._states.get, async_all=async_all)
         names = {"cam": "Front door", "bell": "Doorbell", "nvr": "UNVR", "ap": "AP",
                  "wlan": "Home Wi-Fi"}
         self.devices = {d: types.SimpleNamespace(
@@ -263,6 +276,8 @@ class TestNothingIsRead:
         cams = {c["name"]: c for c in out["cameras"]["cameras"]}
         assert cams["Front door"]["recording"] == "recording"
         assert cams["Doorbell"]["online"] is True
+        # Outside the registry, and still reported, still without its picture.
+        assert cams["YAML gate"]["device_id"] == "entity:camera.yaml_gate"
         assert out["cameras"]["recorders"][0]["storage_used_pct"] == 96.1
         assert out["network"]["clients"]["wireless"] == 12
 
