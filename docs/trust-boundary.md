@@ -68,6 +68,16 @@ field on an old one, follows the rules below. Code review checks them.
     published through, and nothing on the home could check it; Baytec Link
     replaced it, so `tunnel_setup` is in `service_policy.RETIRED_ACTIONS` and
     refused before consent is read.
+11. **No picture, snapshot, stream or video of the home ever leaves it**
+    (owner's decision, 2026-10-18). Cameras are monitored for health only.
+    The collectors read an allowlist of attributes that has no picture or
+    stream in it (`ha_facts.ALLOWED_ATTRIBUTES`); `camera.snapshot`,
+    `camera.record`, `camera.play_stream` and `image.snapshot` are NEVER; no
+    command browses a media source but the agent's own `dartec/` folder; and
+    `media_guard.strip` removes any picture key or camera URL from every
+    snapshot and reply at the door (`cloud_link`). A new command or collector
+    must not add a way round this: `tests/test_media_guard.py` scans every
+    module for camera image, stream and WebRTC calls.
 
 ## Adding a command
 

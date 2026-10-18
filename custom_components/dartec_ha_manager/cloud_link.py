@@ -16,7 +16,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import privacy
+from . import media_guard, privacy
 from .collector import collect_snapshot
 from .commands import execute_command
 from .const import (RECONNECT_MAX_S, RECONNECT_MIN_S, SIGNAL_SNAPSHOT_NOW,
@@ -90,7 +90,8 @@ class CloudLink:
         """
         snapshot = await collect_snapshot(self._hass)
         try:
-            return (await privacy.async_filter(self._hass)).scrub_snapshot(snapshot)
+            return _without_camera_media(
+                (await privacy.async_filter(self._hass)).scrub_snapshot(snapshot), "snapshot")
         except Exception as err:  # noqa: BLE001 — fail closed, never go dark
             _LOGGER.warning("Could not hide household names, sending the core section only: %s",
                             type(err).__name__)
@@ -143,7 +144,8 @@ class CloudLink:
                             both = before.merged(await privacy.async_filter(self._hass))
                         except Exception:  # noqa: BLE001 — the names before still hide
                             both = before
-                        result = both.scrub(result)
+                        result = _without_camera_media(both.scrub(result),
+                                                       f"reply to {data.get('action')}")
                     async with send_lock:
                         await ws.send_json({"type": "command_result", "id": data.get("id"), **result})
                     # push a fresh snapshot right away so the dashboard reflects the outcome
@@ -157,3 +159,15 @@ class CloudLink:
             await reader()
         finally:
             sender_task.cancel()
+
+
+def _without_camera_media(payload: dict, what: str) -> dict:
+    """The payload with every camera picture and stream removed (media_guard).
+
+    The last thing done before anything leaves the home. What was removed is
+    logged by path only: a camera proxy URL carries the token that opens it."""
+    cleaned, removed = media_guard.strip(payload)
+    if removed:
+        _LOGGER.warning("Removed camera media from the %s before sending it: %s",
+                        what, ", ".join(removed[:10]))
+    return cleaned
