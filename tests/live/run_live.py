@@ -34,7 +34,14 @@ For each Home Assistant version given, this:
    (`arabic_states_check.py`) and checks the agent's formal Arabic is what
    comes back, where Home Assistant has none of its own, and that every key
    it corrects still exists in HA's English (dartec-ha-manager#55);
-10. checks the log: nothing reported against `dartec_ha_manager`, in
+10. checks the demo's cameras are reported for health (online, recording) and
+   that nothing the agent sent carries a picture: Home Assistant gives each
+   camera an `entity_picture` with a live token, and neither the token nor a
+   camera proxy URL may appear anywhere in a snapshot (owner's rule,
+   2026-10-18; media_guard.py); and that the agent's own internet check
+   (internet_watch.py) reports, from inside the container, with no network
+   equipment to read;
+11. checks the log: nothing reported against `dartec_ha_manager`, in
    particular no device-registry mapping deprecation, no read of a device's
    deprecated `config_entries` (2026.10) and no blocking read of
    `manifest.json`. The canary must be reported for the same things, so a
@@ -444,6 +451,60 @@ def ha_log(name: str) -> str:
     return ANSI.sub("", text or docker("logs", name, check=False))
 
 
+DEMO_CAMERAS = ("camera.demo_camera", "camera.demo_camera_png",
+                "camera.demo_camera_without_stream")
+
+
+def check_cameras(base: str, token: str, snapshot: dict) -> tuple[list[str], int]:
+    """The demo cameras are reported for health, and no picture left the home.
+
+    Read from Home Assistant first, so the check proves something: each demo
+    camera's state carries an `entity_picture` with its access token, which
+    opens the picture to anyone holding it."""
+    problems = []
+    tokens = []
+    for entity_id in DEMO_CAMERAS:
+        state = http("GET", f"{base}/api/states/{entity_id}", token=token)
+        attributes = state.get("attributes") or {}
+        if "/api/camera_proxy/" not in str(attributes.get("entity_picture")):
+            problems.append(f"{entity_id} has no camera proxy picture to keep out: "
+                            f"{attributes.get('entity_picture')!r}")
+        if attributes.get("access_token"):
+            tokens.append(str(attributes["access_token"]))
+    text = json.dumps(snapshot)
+    for leaked in ("camera_proxy", "entity_picture", "access_token", "image_proxy"):
+        if leaked in text:
+            problems.append(f"the snapshot carries {leaked!r}")
+    problems += [f"the snapshot carries a camera's access token ({t[:6]}...)"
+                 for t in tokens if t in text]
+    section = snapshot.get("cameras") or {}
+    reported = {c.get("device_id"): c for c in section.get("cameras") or []}
+    for entity_id in DEMO_CAMERAS:
+        row = reported.get(f"entity:{entity_id}")
+        if row is None:
+            problems.append(f"{entity_id} is not in the cameras section: {sorted(reported)}")
+        elif row.get("online") is not True or row.get("adapter") is not None:
+            problems.append(f"{entity_id} reported as {row}")
+    return problems, len(tokens)
+
+
+def check_internet(snapshot: dict | None) -> tuple[list[str], str]:
+    """The agent's own internet check ran inside real Home Assistant and its
+    answer reached the manager. Up, or blocked if this machine's network stops
+    the probes while the stub manager answers; never missing, never "down"
+    while snapshots arrive."""
+    network = (snapshot or {}).get("network")
+    if not isinstance(network, dict):
+        return [f"no network section in the latest snapshot: {network!r}"], "missing"
+    problems = []
+    agent = (network.get("internet") or {}).get("agent") or {}
+    if agent.get("state") not in ("up", "blocked"):
+        problems.append(f"the agent's internet check says {agent!r}")
+    if network.get("devices"):
+        problems.append(f"a home with no network equipment reported {network['devices']}")
+    return problems, str(agent.get("state"))
+
+
 def check_devices(snapshot: dict, query: dict, truth: dict) -> list[str]:
     problems = []
     areas = {area["area_id"]: area["name"] for area in truth["areas"]}
@@ -607,6 +668,11 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         if not isinstance(disk, dict) or not ("sources" in disk or "unavailable" in disk):
             problems.append(f"snapshot disk_health missing or malformed: {disk!r}")
         problems += check_devices(snapshot, query, truth)
+        camera_problems, camera_tokens = check_cameras(base, token, snapshot)
+        problems += camera_problems
+        log(f"{version}: cameras: {len((snapshot.get('cameras') or {}).get('cameras') or [])} "
+            f"reported, {camera_tokens} live picture token(s) kept in the home, "
+            f"{len(camera_problems)} problem(s)")
 
         swap = wait_for("the hacs_token_set answer",
                         lambda: read_state(name, "result-hacs-swap.json"), timeout)
@@ -630,6 +696,10 @@ def run_version(version: str, keep: bool, artifacts: Path | None, timeout: float
         log(f"{version}: Arabic states: {arabic['evidence']['dartec']} in Dartec's Arabic, "
             f"{len(arabic['evidence']['ha_own_arabic'])} left as Home Assistant has them, "
             f"{len(arabic['problems'])} problem(s)")
+
+        internet_problems, internet = check_internet(latest_snapshot(name)[1])
+        problems += internet_problems
+        log(f"{version}: the agent's internet check: {internet}")
 
         brand_problems = check_brand(base, token, running)
         problems += brand_problems

@@ -15,7 +15,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from . import device_health, hacs_token, machine, signal_health
+from . import (camera_health, device_health, hacs_token, machine, network_health,
+               signal_health)
 from .const import DOMAIN
 from .machine import async_collect_hardware
 from .registry_access import all_devices
@@ -52,6 +53,13 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # the manager is sent two short lists rather than every entity's state.
     # Thresholds and "for how long" are decided on the manager.
     snapshot.update(device_health.collect(hass))
+    # The network Baytec supplied and the cameras on it, for health only: is
+    # the internet up, is each access point and camera online, is recording
+    # running, is the recorder's disk filling. Never a picture, a stream or a
+    # recording (camera_health.py, media_guard.py). Each is absent on a home
+    # with nothing to report.
+    snapshot.update(network_health.collect(hass))
+    snapshot.update(camera_health.collect(hass))
     # Which phones this home can actually push to. Cheap (a dict lookup, no
     # I/O) and it is the difference between a Live Activity appearing on a
     # lock screen and nothing happening at all: the notify action name is

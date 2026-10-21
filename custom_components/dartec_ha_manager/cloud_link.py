@@ -16,7 +16,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import privacy
+from . import media_guard, privacy
 from .collector import collect_snapshot
 from .commands import execute_command
 from .const import (RECONNECT_MAX_S, RECONNECT_MIN_S, SIGNAL_SNAPSHOT_NOW,
@@ -37,18 +37,29 @@ class CloudLink:
         self.connected = False
         self._nudge = asyncio.Event()
         self._unsub_nudge = None
+        # Set when the agent's internet check sees the line come back, so a
+        # home reconnects at once instead of after a backoff of up to five
+        # minutes (internet_watch.py).
+        self._wake = asyncio.Event()
+        self._unsub_wake = None
 
     def start(self) -> None:
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
+        from .internet_watch import SIGNAL_INTERNET_BACK
+
         self._unsub_nudge = async_dispatcher_connect(
             self._hass, SIGNAL_SNAPSHOT_NOW, self._nudge.set)
+        self._unsub_wake = async_dispatcher_connect(
+            self._hass, SIGNAL_INTERNET_BACK, self._wake.set)
         self._task = self._hass.async_create_background_task(self._run(), name="dartec_cloud_link")
 
     async def stop(self) -> None:
         self._stopping = True
         if self._unsub_nudge:
             self._unsub_nudge()
+        if self._unsub_wake:
+            self._unsub_wake()
         if self._task:
             self._task.cancel()
             try:
@@ -78,8 +89,12 @@ class CloudLink:
                 _LOGGER.warning("Dartec cloud link lost (%s); retrying in %ss", err, backoff)
             except asyncio.CancelledError:
                 raise
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, RECONNECT_MAX_S)
+            self._wake.clear()
+            try:
+                await asyncio.wait_for(self._wake.wait(), backoff)
+                backoff = RECONNECT_MIN_S       # the line is back: start afresh
+            except asyncio.TimeoutError:
+                backoff = min(backoff * 2, RECONNECT_MAX_S)
 
     async def _outbound_snapshot(self) -> dict:
         """The snapshot as the manager may see it: household names hidden.
@@ -90,7 +105,8 @@ class CloudLink:
         """
         snapshot = await collect_snapshot(self._hass)
         try:
-            return (await privacy.async_filter(self._hass)).scrub_snapshot(snapshot)
+            return _without_camera_media(
+                (await privacy.async_filter(self._hass)).scrub_snapshot(snapshot), "snapshot")
         except Exception as err:  # noqa: BLE001 — fail closed, never go dark
             _LOGGER.warning("Could not hide household names, sending the core section only: %s",
                             type(err).__name__)
@@ -143,7 +159,8 @@ class CloudLink:
                             both = before.merged(await privacy.async_filter(self._hass))
                         except Exception:  # noqa: BLE001 — the names before still hide
                             both = before
-                        result = both.scrub(result)
+                        result = _without_camera_media(both.scrub(result),
+                                                       f"reply to {data.get('action')}")
                     async with send_lock:
                         await ws.send_json({"type": "command_result", "id": data.get("id"), **result})
                     # push a fresh snapshot right away so the dashboard reflects the outcome
@@ -157,3 +174,15 @@ class CloudLink:
             await reader()
         finally:
             sender_task.cancel()
+
+
+def _without_camera_media(payload: dict, what: str) -> dict:
+    """The payload with every camera picture and stream removed (media_guard).
+
+    The last thing done before anything leaves the home. What was removed is
+    logged by path only: a camera proxy URL carries the token that opens it."""
+    cleaned, removed = media_guard.strip(payload)
+    if removed:
+        _LOGGER.warning("Removed camera media from the %s before sending it: %s",
+                        what, ", ".join(removed[:10]))
+    return cleaned

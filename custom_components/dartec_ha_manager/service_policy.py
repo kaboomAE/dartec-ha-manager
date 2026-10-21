@@ -58,6 +58,13 @@ NEVER_SERVICES = frozenset({
     "hassio.addon_stdin",     # writes to an add-on's stdin == arbitrary execution
     "hassio.host_shutdown",   # powers the house off; nothing can turn it back on
     "homeassistant.stop",     # same problem — no remote route back
+    # The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): Baytec never
+    # sees a picture, snapshot, stream or recording from a home. Each of these
+    # makes one — a still to a file, a clip to a file, a stream cast to a
+    # screen — which media_cmds or a backup could then carry out of the house.
+    # Cameras are monitored for health only (camera_health.py, media_guard.py).
+    "camera.snapshot", "camera.record", "camera.play_stream",
+    "image.snapshot",
 })
 
 # Reversible, low-consequence, needed for commissioning and diagnostics.

@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from . import arabic_states, ha_update, household_ws, maintenance
+from . import arabic_states, ha_update, household_ws, internet_watch, maintenance
 from .branding import async_setup_branding
 from .cloud_link import CloudLink
 from .const import CONF_PAIRING_TOKEN, CONF_SERVER_URL, DOMAIN
@@ -70,6 +70,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     link = CloudLink(hass, entry.data[CONF_SERVER_URL], entry.data[CONF_PAIRING_TOKEN])
     link.start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
+    # The home's own internet check, and its record of outages, kept here so
+    # an outage the home could not report while it happened is reported when
+    # the line is back (internet_watch.py).
+    await internet_watch.async_start(hass, entry)
 
     # A guarded update restarts Home Assistant (or reboots the machine) in
     # the middle of itself. This is where it carries on: the health check,
