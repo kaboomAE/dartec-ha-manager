@@ -1,4 +1,4 @@
-"""The network section: UniFi's entities onto Baytec's common shape.
+"""The network section: UniFi's entities onto Sakntec's common shape.
 
 Facts are shaped exactly as ha_facts.entity_facts builds them, with unique
 ids and translation keys as Home Assistant's UniFi Network integration

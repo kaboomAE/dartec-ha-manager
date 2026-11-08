@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Sakntec">
+  <title>Sakntec</title>
+  <!--
+    Sakntec identity, approved by the owner on 2026-11-05. Artwork copied
+    unchanged from kaboomAE/smarthome-planner design-system/rebrand-sakntec/
+    assets/, where build/build.mjs generates it; never edit by hand.
+    Mark: logo 18 as drawn. Wordmarks are outlines (HarfBuzz over the unmodified
+    IBM Plex Sans and Lateef files); this file carries no font.
+  -->
+  <g fill="none" stroke-linecap="round">
+    <path stroke="#22251f" stroke-width="6" stroke-linejoin="round" d="M32 8 L8 30 V57 H32"/>
+    <path stroke="#1a6b6b" stroke-width="5" d="M32 45 A12 12 0 0 1 44 57"/>
+    <path stroke="#1a6b6b" stroke-width="5" d="M32 33 A24 24 0 0 1 56 57"/>
+    <circle fill="#1a6b6b" cx="32" cy="57" r="4"/>
+  </g>
+</svg>

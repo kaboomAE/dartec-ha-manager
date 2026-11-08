@@ -22,10 +22,10 @@ home's whole configuration must not go wherever a compromised manager points
 it (GHSA-v9pc-vw88-p798). The backup and agent ids are checked before they
 are put into Home Assistant's download URL.
 
-**No media folder, in anything Baytec makes or takes** (the owner's
+**No media folder, in anything Sakntec makes or takes** (the owner's
 decision, 2026-10-18; media_guard.py). Home Assistant's `media` folder is
 where a household's own automations save camera snapshots and clips, and
-Baytec never sees a picture from a home. So a backup Baytec starts leaves it
+Sakntec never sees a picture from a home. So a backup Sakntec starts leaves it
 out and cannot be asked to include it; setting the automatic schedule takes
 it out of the automatic backups too; and a backup that contains it is never
 copied offsite, whoever made it. `backup_list` says which backups contain it
@@ -63,7 +63,7 @@ def _fail(msg: str) -> dict:
     return {"ok": False, "detail": msg}
 
 
-# Home Assistant's folders a Baytec backup may include. `media` is left out
+# Home Assistant's folders a Sakntec backup may include. `media` is left out
 # on purpose and refused if asked for: see the module docstring.
 MEDIA_FOLDER = "media"
 DEFAULT_FOLDERS = ("share", "ssl")
@@ -158,7 +158,7 @@ async def backup_create(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
         if not isinstance(folders, list) or not all(isinstance(f, str) for f in folders):
             return _fail("include_folders must be a list of folder names")
         if without_media(folders) != folders:
-            return {**_fail("refused: a Baytec backup never includes the media folder, "
+            return {**_fail("refused: a Sakntec backup never includes the media folder, "
                             "where camera snapshots and clips are kept"), "refused": True}
         payload["include_all_addons"] = bool(cmd.get("include_all_addons", True))
         payload["include_folders"] = folders
@@ -265,7 +265,7 @@ async def backup_upload(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
     if includes_media(backup):
         return {**_fail(f"refused: '{backup.get('name') or backup_id}' includes the media "
                         "folder, where camera snapshots and clips are kept, and is never "
-                        "copied offsite. Take a Baytec backup (it leaves media out) and "
+                        "copied offsite. Take a Sakntec backup (it leaves media out) and "
                         "copy that."), "refused": True}
     # Core backups report no size in backup/details (only Supervisor ones do),
     # so this pre-check is best-effort. The manager enforces a hard byte

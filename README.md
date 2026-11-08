@@ -1,11 +1,13 @@
-# Baytec HA Manager — Agent
+# Sakntec HA Manager — Agent
 
-> **Baytec (formerly Dartec).** The brand is now Baytec / «بيتك» (2026-10-08). What
-> the homeowner sees says Baytec; the integration domain `dartec_ha_manager`,
-> entity ids, service names, the `/dartec_branding/` paths and the dartec.ae
-> hosts stay as they are, because installed homes depend on them.
+> **Sakntec (formerly Baytec, and before that Dartec).** The brand is now
+> Sakntec / «سكنتك», with a new mark (owner, 2026-11-05). What the homeowner sees
+> says Sakntec; the integration domain `dartec_ha_manager`, entity ids, service
+> names, the `/dartec_branding/` paths and the dartec.ae hosts stay as they are,
+> because installed homes depend on them. "Baytec Link" is the remote-access
+> add-on's own name and changes in its own repository.
 
-The Home Assistant integration that links an HA instance to [Baytec HA Manager](https://manager.dartec.ae), Baytec's centralized fleet-management dashboard for smart homes.
+The Home Assistant integration that links an HA instance to [Sakntec HA Manager](https://manager.dartec.ae), Sakntec's centralized fleet-management dashboard for smart homes.
 
 > **Maintaining this integration?** See [HANDOVER.md](HANDOVER.md) — module
 > map, the release process (HACS installs *Releases*, not tags), CI, and the
@@ -31,9 +33,9 @@ install rather than a number somebody remembered to update in two places.
 ## What it does
 
 - Opens a single **outbound** encrypted WebSocket to the Dartec cloud — no port forwarding, no VPN, no exposed services.
-- Sends a health snapshot every 60 seconds: HA version, integrations and their states, add-ons (HA OS), HACS repositories, automations, dashboards, critical logs, host metrics, battery levels, and devices that have stopped answering (summarised on the home — see `device_health.py` for what counts as offline, and label a device `Baytec expected offline` in Home Assistant to leave it out; the old `Dartec expected offline` label still works).
-- Reports the **network and cameras** Baytec installed, for health only: internet up or down, each gateway, access point and switch online or not, Wi-Fi client counts and firmware, and each camera online, recording or not, and the recorder's disk. UniFi Network and UniFi Protect first, through Home Assistant's own integrations; other brands are an adapter each (`network_health.py`, `camera_health.py`). **No picture, snapshot, stream or video ever leaves the home**: the agent never reads one, cannot be asked for one, and removes any that might appear before anything is sent (`media_guard.py`). Checks its **own internet** every 30 seconds and keeps a record of outages in the home, so one it could not report while it lasted is reported when the line is back (`internet_watch.py`).
-- Keeps **media out of backups**: a backup Baytec starts, and the automatic schedule it sets, leave Home Assistant's `media` folder out, and a backup that holds it is never copied offsite.
+- Sends a health snapshot every 60 seconds: HA version, integrations and their states, add-ons (HA OS), HACS repositories, automations, dashboards, critical logs, host metrics, battery levels, and devices that have stopped answering (summarised on the home — see `device_health.py` for what counts as offline, and label a device `Sakntec expected offline` in Home Assistant to leave it out; the old `Baytec expected offline` and `Dartec expected offline` labels still work).
+- Reports the **network and cameras** Sakntec installed, for health only: internet up or down, each gateway, access point and switch online or not, Wi-Fi client counts and firmware, and each camera online, recording or not, and the recorder's disk. UniFi Network and UniFi Protect first, through Home Assistant's own integrations; other brands are an adapter each (`network_health.py`, `camera_health.py`). **No picture, snapshot, stream or video ever leaves the home**: the agent never reads one, cannot be asked for one, and removes any that might appear before anything is sent (`media_guard.py`). Checks its **own internet** every 30 seconds and keeps a record of outages in the home, so one it could not report while it lasted is reported when the line is back (`internet_watch.py`).
+- Keeps **media out of backups**: a backup Sakntec starts, and the automatic schedule it sets, leave Home Assistant's `media` folder out, and a backup that holds it is never copied offsite.
 - Adds **My Home** to the sidebar for the people who manage the home: add family and guests, set a new password, pause or remove someone, and choose the dashboard each person sees first, in English or Arabic. It works entirely inside your home, under your own Home Assistant sign-in; Dartec cannot use it and only learns how many people have each role. See the [My Home guide](docs/my-home/README.md).
 - Reads properly in **Arabic**: shows formal Arabic for the state words Home Assistant's Arabic still leaves in English ("On" becomes «مُشغَّل», "Cool" «تبريد», "Open" «مفتوح»), only where Home Assistant has no Arabic of its own, and keeps a temperature reading "22.0 °C" rather than "C° 22.0" in right-to-left layouts. Nothing changes in English. See [Arabic and right-to-left](docs/dashboards/arabic-rtl.md#arabic-state-words).
 - Executes a small **allowlisted** set of remote commands. The allowlist is

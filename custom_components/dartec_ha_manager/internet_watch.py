@@ -1,7 +1,7 @@
 """The home's own internet check, and a record of the outages it saw.
 
 The owner's request, 2026-10-18: an internet outage must be reported even
-though, during one, the home cannot reach Baytec at all (the agent's link is
+though, during one, the home cannot reach Sakntec at all (the agent's link is
 over the same line). So the agent watches the line itself, keeps what it saw
 in the house, and reports it once the line is back:
 
@@ -13,7 +13,7 @@ in the house, and reports it once the line is back:
   dropped round is not an outage. Brand-neutral: it needs no network
   equipment, no integration and nothing set up by an installer.
 * **A guard against a false "down".** If every probe fails while the agent
-  is connected to Baytec, the internet plainly works and something on the
+  is connected to Sakntec, the internet plainly works and something on the
   network is blocking the probes: the state is `blocked`, never `down`.
 * **The record.** Each outage is kept, with when it started and ended, in
   Home Assistant's own storage (`.storage/dartec_ha_manager.internet`), so it
@@ -108,7 +108,7 @@ class InternetState:
             return changed
         self._failed_rounds += 1
         if link_up:
-            # Baytec is reachable, so the internet is: the probes are blocked.
+            # Sakntec is reachable, so the internet is: the probes are blocked.
             changed = self.state != "blocked"
             if changed:
                 self.state, self.since = "blocked", _iso(now)

@@ -1,6 +1,6 @@
 {
   "domain": "dartec_ha_manager",
-  "name": "Baytec HA Manager",
+  "name": "Sakntec HA Manager",
   "after_dependencies": [
     "mqtt"
   ],

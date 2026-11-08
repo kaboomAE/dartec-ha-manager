@@ -1,6 +1,6 @@
 """The home's network, in one shape whatever the brand: the `network` section.
 
-The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): Baytec supplies
+The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): Sakntec supplies
 each home's network equipment and the ISP's router stays only as the internet
 connection. The brand is UniFi today, and may not be the only one later. So
 this is two parts:
@@ -36,24 +36,25 @@ monitor target, which may keep its last value while the line is down. So the
 internet state is read, in order of trust, from:
 
 1. any `binary_sensor` carrying the label `baytec_internet` (create a label
-   named "Baytec internet" and put it on, say, a Ping (ICMP) sensor): `on` is
+   named "Sakntec internet" and put it on, say, a Ping (ICMP) sensor): `on` is
    up. An installer's explicit choice, so it wins;
 2. the agent's own check (internet_watch.py), on every home, whatever its
-   equipment: up, down, or `blocked` when the probes fail while Baytec is
+   equipment: up, down, or `blocked` when the probes fail while Sakntec is
    reachable;
 3. the UniFi WAN latency sensors, when an installer has enabled them: a
    number is up; all of a WAN's targets `unavailable`/`unknown` is down;
 4. otherwise unknown.
 
 An internet outage with no second WAN takes the home off the manager, since
-the agent reaches Baytec over that same line. The agent's check keeps a
+the agent reaches Sakntec over that same line. The agent's check keeps a
 record of every outage in the house and reports it when the line is back
 (`internet.agent.outages`), so the manager can say why the home went quiet.
 The WAN rows are sent whatever the source, so a failover to a second line is
 still seen.
 
-Labels: a device carrying `baytec_expected_offline` (device_health.py) is
-still listed, marked `expected_offline`, and the manager does not alert on it.
+Labels: a device carrying `sakntec_expected_offline`, or the older Baytec or
+Dartec label (device_health.py), is still listed, marked `expected_offline`,
+and the manager does not alert on it.
 """
 from __future__ import annotations
 

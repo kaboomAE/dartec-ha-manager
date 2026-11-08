@@ -1,4 +1,4 @@
-"""No picture, snapshot, stream or video of a home ever reaches Baytec.
+"""No picture, snapshot, stream or video of a home ever reaches Sakntec.
 
 The owner's rule of 2026-10-18 (kaboomAE/dartec-ops#45), held three ways
 (media_guard.py) and tested each way here:

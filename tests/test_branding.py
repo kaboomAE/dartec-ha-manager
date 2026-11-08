@@ -1,14 +1,14 @@
-"""The sidebar branding after the rename: Baytec by default, the lockup in the
-viewer's language, and every home branded before it left exactly as it was.
+"""The sidebar branding after the renames: Sakntec by default, the lockup in
+the viewer's language, and every home branded before left exactly as it was.
 
-ADDED refused "Dar" in the trade name, so the brand is Baytec / «بيتك»
-(2026-10-08). The owner's decision for the Home Assistant sidebar is the mark
-and the name together, in the household's language: the Latin lockup 26 px
-tall, the Arabic one 30 px (below that the dots under ب and ي fuse). These pin
-what the agent stores and what it hands the browser module. Homes already
-store `{"title": "Dartec", "logo": "mark", ...}` in their options, and must
-draw exactly what they drew until someone re-applies branding from the
-manager. tests/test_branding_js.py runs the module itself.
+The brand was Dartec, then Baytec / «بيتك» (2026-10-08), and is Sakntec /
+«سكنتك» with a new mark, logo 18 (owner, 2026-11-05). The owner's decision for
+the Home Assistant sidebar is the mark and the name together, in the
+household's language: the Latin lockup 26 px tall, the Arabic one 30 px. These
+pin what the agent stores and what it hands the browser module. Homes already
+store `{"title": "Dartec", "logo": "mark", ...}` or the Baytec look in their
+options, and must draw exactly what they drew until someone re-applies
+branding from the manager. tests/test_branding_js.py runs the module itself.
 """
 from __future__ import annotations
 
@@ -64,9 +64,12 @@ branding = _load("branding")
 # What a home branded before the rename has in its options, as branding_set
 # stored it.
 STORED_DARTEC = {"enabled": True, "title": "Dartec", "logo": "mark", "tab_suffix": True}
+# What a home branded after the first rename stores.
+STORED_BAYTEC = {"enabled": True, "title": "Baytec", "title_ar": "بيتك",
+                 "logo": "baytec-lockup", "tab_suffix": True}
 # What the manager sends for the new look (the contract in the PR).
-NEW_LOOK = {"enabled": True, "title": "Baytec", "title_ar": "بيتك",
-            "logo": "baytec-lockup", "tab_suffix": True}
+NEW_LOOK = {"enabled": True, "title": "Sakntec", "title_ar": "سكنتك",
+            "logo": "sakntec-lockup", "tab_suffix": True}
 
 
 class Entry:
@@ -115,23 +118,23 @@ def apply(hass, **cmd):
 
 
 class TestDefaults:
-    def test_the_default_title_is_baytec(self):
-        assert branding.DEFAULTS["title"] == "Baytec"
+    def test_the_default_title_is_sakntec(self):
+        assert branding.DEFAULTS["title"] == "Sakntec"
 
-    def test_the_default_logo_is_the_baytec_lockup(self):
-        assert branding.DEFAULTS["logo"] == "baytec-lockup"
+    def test_the_default_logo_is_the_sakntec_lockup(self):
+        assert branding.DEFAULTS["logo"] == "sakntec-lockup"
 
     def test_branding_stays_off_until_the_manager_turns_it_on(self):
         assert branding.DEFAULTS["enabled"] is False
 
-    def test_turning_it_on_with_nothing_else_gives_baytec_in_both_languages(self):
+    def test_turning_it_on_with_nothing_else_gives_sakntec_in_both_languages(self):
         hass = Hass()
         result = apply(hass, enabled=True)
         assert result["ok"], result
         stored = hass.config_entries._entries[0].options["branding"]
-        assert stored["title"] == "Baytec" and stored["logo"] == "baytec-lockup"
+        assert stored["title"] == "Sakntec" and stored["logo"] == "sakntec-lockup"
         out = payload(stored)
-        assert out["title"] == "Baytec" and out["titleAr"] == "بيتك"
+        assert out["title"] == "Sakntec" and out["titleAr"] == "سكنتك"
 
 
 class TestNewLook:
@@ -140,43 +143,55 @@ class TestNewLook:
         result = apply(hass, **NEW_LOOK)
         assert result["ok"], result
         assert hass.config_entries._entries[0].options["branding"] == NEW_LOOK
-        assert "'Baytec' / 'بيتك'" in result["detail"]
-        assert "baytec-lockup" in result["detail"]
+        assert "'Sakntec' / 'سكنتك'" in result["detail"]
+        assert "sakntec-lockup" in result["detail"]
 
     def test_the_lockup_has_a_latin_and_an_arabic_file_at_their_own_heights(self):
         out = payload(NEW_LOOK)
-        assert out["logoBase"] == "/dartec_branding/baytec-lockup-en"
-        assert out["logoBaseAr"] == "/dartec_branding/baytec-lockup-ar"
-        # The owner's sizes: 26 px Latin, 30 px Arabic, each its own floor.
+        assert out["logoBase"] == "/dartec_branding/sakntec-lockup-en"
+        assert out["logoBaseAr"] == "/dartec_branding/sakntec-lockup-ar"
+        # The owner's sizes, carried over: 26 px Latin, 30 px Arabic.
         assert out["logoHeight"] == 26 and out["logoHeightAr"] == 30
-        assert out["title"] == "Baytec" and out["titleAr"] == "بيتك"
+        assert out["title"] == "Sakntec" and out["titleAr"] == "سكنتك"
         assert out["tabSuffix"] is True
 
-    def test_baytec_alone_still_gets_its_arabic_name(self):
-        """A manager that sends only the Latin title still puts «بيتك» in an
+    def test_sakntec_alone_still_gets_its_arabic_name(self):
+        """A manager that sends only the Latin title still puts «سكنتك» in an
         Arabic viewer's tab."""
         out = payload({**NEW_LOOK, "title_ar": ""})
-        assert out["titleAr"] == "بيتك"
+        assert out["titleAr"] == "سكنتك"
 
     def test_another_installer_name_is_not_given_an_arabic_name(self):
         out = payload({**NEW_LOOK, "title": "Villa Systems", "title_ar": ""})
         assert out["titleAr"] == ""
 
     def test_an_explicit_arabic_title_wins(self):
-        out = payload({**NEW_LOOK, "title_ar": "بيتك الذكي"})
-        assert out["titleAr"] == "بيتك الذكي"
+        out = payload({**NEW_LOOK, "title_ar": "اسم آخر"})
+        assert out["titleAr"] == "اسم آخر"
 
-    def test_the_baytec_mark_is_the_mark_alone_at_the_old_height(self):
-        out = payload({**NEW_LOOK, "logo": "baytec-mark"})
-        assert out["logoBase"] == "/dartec_branding/baytec-mark"
+    def test_the_sakntec_mark_is_the_mark_alone_at_the_old_height(self):
+        out = payload({**NEW_LOOK, "logo": "sakntec-mark"})
+        assert out["logoBase"] == "/dartec_branding/sakntec-mark"
         assert out["logoBaseAr"] == "" and out["logoHeight"] == 22
+
+    def test_the_sakntec_files_are_logo_18(self):
+        """The mark changed with the name: every Sakntec file draws logo 18's
+        exact paths, and none carries a font."""
+        for name in ("sakntec-mark", "sakntec-lockup-en", "sakntec-lockup-ar"):
+            for theme in ("light", "dark"):
+                svg = (WWW / f"{name}-{theme}.svg").read_text(encoding="utf-8")
+                for d in ('d="M32 8 L8 30 V57 H32"', 'd="M32 45 A12 12 0 0 1 44 57"',
+                          'd="M32 33 A24 24 0 0 1 56 57"', 'cx="32" cy="57" r="4"'):
+                    assert d in svg, (name, theme, d)
+                assert "@font-face" not in svg and "<text" not in svg
 
     def test_the_home_language_is_carried_as_a_fallback_and_changes_the_stamp(self):
         en, ar = payload(NEW_LOOK, "en"), payload(NEW_LOOK, "ar")
         assert en["lang"] == "en" and ar["lang"] == "ar"
         assert en["stamp"] != ar["stamp"]
 
-    @pytest.mark.parametrize("logo", ["mark", "lockup", "baytec-mark", "baytec-lockup"])
+    @pytest.mark.parametrize("logo", ["mark", "lockup", "baytec-mark", "baytec-lockup",
+                                      "sakntec-mark", "sakntec-lockup"])
     def test_every_file_a_logo_names_is_shipped(self, logo):
         spec = branding.LOGOS[logo]
         for key in ("file", "file_ar"):
@@ -197,6 +212,25 @@ class TestBackwardCompatibility:
         assert out["logoHeight"] == 22         # the height it always had
         assert out["enabled"] is True and out["tabSuffix"] is True
 
+    def test_a_stored_baytec_lockup_renders_exactly_as_before(self):
+        """A home branded Baytec keeps the Baytec files, sizes and «بيتك»
+        until branding is applied again."""
+        out = payload(STORED_BAYTEC)
+        assert out["title"] == "Baytec" and out["titleAr"] == "بيتك"
+        assert out["logoBase"] == "/dartec_branding/baytec-lockup-en"
+        assert out["logoBaseAr"] == "/dartec_branding/baytec-lockup-ar"
+        assert out["logoHeight"] == 26 and out["logoHeightAr"] == 30
+
+    def test_baytec_alone_still_gets_its_own_arabic_name(self):
+        out = payload({**STORED_BAYTEC, "title_ar": ""})
+        assert out["titleAr"] == "بيتك"
+
+    def test_a_stored_baytec_look_is_not_rewritten_at_startup(self):
+        hass = Hass(options={"branding": STORED_BAYTEC})
+        asyncio.run(branding.async_setup_branding(hass, STORED_BAYTEC))
+        assert hass.config_entries.updates == []
+        assert branding._config(hass)["logo"] == "baytec-lockup"
+
     def test_a_stored_dartec_lockup_still_draws_the_dartec_lockup(self):
         out = payload({**STORED_DARTEC, "logo": "lockup"})
         assert out["logoBase"] == "/dartec_branding/dartec-lockup"
@@ -210,7 +244,8 @@ class TestBackwardCompatibility:
         assert branding._config(hass)["logo"] == "mark"
 
     def test_old_files_are_still_shipped(self):
-        for name in ("dartec-mark", "dartec-lockup"):
+        for name in ("dartec-mark", "dartec-lockup", "baytec-mark",
+                     "baytec-lockup-en", "baytec-lockup-ar"):
             for theme in ("light", "dark"):
                 assert (WWW / f"{name}-{theme}.svg").is_file()
 
@@ -225,7 +260,8 @@ class TestBackwardCompatibility:
         hass = Hass(options={"branding": STORED_DARTEC})
         result = apply(hass, **{**NEW_LOOK, "logo": "something-new"})
         assert result["ok"] is False and result["code"] == "invalid_logo"
-        assert result["logos"] == ["mark", "lockup", "baytec-mark", "baytec-lockup", "none"]
+        assert result["logos"] == ["mark", "lockup", "baytec-mark", "baytec-lockup",
+                                   "sakntec-mark", "sakntec-lockup", "none"]
         assert hass.config_entries.updates == []
 
     def test_re_applying_the_old_look_still_works(self):

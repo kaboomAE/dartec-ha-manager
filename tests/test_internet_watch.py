@@ -1,6 +1,6 @@
 """The home's own internet check (owner's request, 2026-10-18).
 
-An outage cannot be reported while it happens: the agent reaches Baytec over
+An outage cannot be reported while it happens: the agent reaches Sakntec over
 the same line. So what matters is that the home keeps an honest record and
 reports it afterwards, and that it never calls a working line "down".
 """

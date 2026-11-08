@@ -1,6 +1,6 @@
 """The plain facts the network and camera adapters read, built once from HA.
 
-An adapter maps one brand's Home Assistant entities onto Baytec's common
+An adapter maps one brand's Home Assistant entities onto Sakntec's common
 shape (network_health.py, camera_health.py). It never touches Home Assistant
 itself: it is handed lists of dicts built here, so every adapter can be tested
 without Home Assistant, and so what an adapter can see is decided in one
