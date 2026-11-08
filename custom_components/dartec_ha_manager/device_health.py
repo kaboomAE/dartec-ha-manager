@@ -30,12 +30,13 @@ state is `unavailable` or `unknown`. What is left out, and why:
 4. A device whose integration is not loaded. A disabled integration is
    deliberate, and a failed one is already its own alert; a second alert per
    device would bury it.
-5. Anything carrying the label `baytec_expected_offline` (create a label named
-   "Baytec expected offline" in Home Assistant). The escape hatch for a
+5. Anything carrying the label `sakntec_expected_offline` (create a label
+   named "Sakntec expected offline" in Home Assistant). The escape hatch for a
    seasonal device — pool pump in winter, Christmas lights — on the device to
-   skip it, or on one entity to stop that entity counting. The old label,
-   `dartec_expected_offline` ("Dartec expected offline"), still works, so no
-   home has to relabel anything. Both are matched the same way: by label id,
+   skip it, or on one entity to stop that entity counting. The old labels,
+   `baytec_expected_offline` ("Baytec expected offline") and
+   `dartec_expected_offline` ("Dartec expected offline"), still work, so no
+   home has to relabel anything. All are matched the same way: by label id,
    which Home Assistant makes from the name when the label is created —
    lowercased, spaces as underscores. Renaming a label later keeps its id.
 
@@ -69,9 +70,11 @@ DOWN_STATES = frozenset({"unavailable", "unknown"})
 # The label to create, and the Dartec-era one homes already have. Either opts
 # a device or entity out; a manager that only knows the old one is unaffected,
 # since the exclusion happens here, before offline_devices is sent.
-EXPECTED_OFFLINE_LABEL = "baytec_expected_offline"
+EXPECTED_OFFLINE_LABEL = "sakntec_expected_offline"
+BAYTEC_EXPECTED_OFFLINE_LABEL = "baytec_expected_offline"
 LEGACY_EXPECTED_OFFLINE_LABEL = "dartec_expected_offline"
-EXPECTED_OFFLINE_LABELS = frozenset({EXPECTED_OFFLINE_LABEL, LEGACY_EXPECTED_OFFLINE_LABEL})
+EXPECTED_OFFLINE_LABELS = frozenset({EXPECTED_OFFLINE_LABEL, BAYTEC_EXPECTED_OFFLINE_LABEL,
+                                     LEGACY_EXPECTED_OFFLINE_LABEL})
 
 # Phones and tablets charge every night and are not part of the installation;
 # a companion app's battery sensor would alert every evening.

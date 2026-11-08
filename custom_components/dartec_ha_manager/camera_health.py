@@ -2,7 +2,7 @@
 
 The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): cameras are
 monitored for **health only** — is each camera online, is it recording, how
-full is the recorder's disk. Baytec never sees a picture, a snapshot, a
+full is the recorder's disk. Sakntec never sees a picture, a snapshot, a
 stream or a video, and recordings stay on the recorder in the house. Nothing
 here reads one: adapters are handed facts with an allowlist of attributes
 (ha_facts.py) that has no picture or stream in it, the agent cannot be asked

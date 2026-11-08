@@ -53,7 +53,7 @@ async def collect_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     # the manager is sent two short lists rather than every entity's state.
     # Thresholds and "for how long" are decided on the manager.
     snapshot.update(device_health.collect(hass))
-    # The network Baytec supplied and the cameras on it, for health only: is
+    # The network Sakntec supplied and the cameras on it, for health only: is
     # the internet up, is each access point and camera online, is recording
     # running, is the recorder's disk filling. Never a picture, a stream or a
     # recording (camera_health.py, media_guard.py). Each is absent on a home

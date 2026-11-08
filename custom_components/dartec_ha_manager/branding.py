@@ -35,9 +35,9 @@ DASHBOARD_FIX_PATH = f"{URL_BASE}/dashboard-fix.js"
 
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
-    "title": "Baytec",           # sidebar title (the Latin name)
+    "title": "Sakntec",          # sidebar title (the Latin name)
     "title_ar": "",              # the name for Arabic viewers; "" = see arabic_title()
-    "logo": "baytec-lockup",     # a key of LOGOS
+    "logo": "sakntec-lockup",    # a key of LOGOS
     "tab_suffix": True,          # append the name to the browser tab title
 }
 
@@ -53,21 +53,33 @@ DEFAULTS: dict[str, Any] = {
 # «بيتك» lockup 30 px tall, each at its own legibility floor — below 30 px the
 # three dots under ب and ي fuse on a 1x screen. Outlined SVGs, so no live
 # Lateef text and nothing to clip the dots. "baytec-mark" is the mark alone
-# (the same artwork as "mark", from the Baytec files).
+# (the same artwork as "mark", from the Baytec files). Both stay for homes
+# that store them, and draw exactly what they drew.
+#
+# "sakntec-lockup" is the Sakntec mark, logo 18, and the name together, in the
+# viewer's own language (owner, 2026-11-05: everything public moves to
+# Sakntec, and the mark changes too): the Latin lockup 26 px tall and the
+# Arabic «سكنتك» lockup 30 px tall, the sizes carried over from the Baytec
+# lockup. The identity's own floors are 16 px and 20 px, so both sit well
+# above them. "sakntec-mark" is the new mark alone.
 LOGOS: dict[str, dict[str, Any] | None] = {
     "mark": {"file": "dartec-mark", "height": 22},
     "lockup": {"file": "dartec-lockup", "height": 22},
     "baytec-mark": {"file": "baytec-mark", "height": 22},
     "baytec-lockup": {"file": "baytec-lockup-en", "height": 26,
                       "file_ar": "baytec-lockup-ar", "height_ar": 30},
+    "sakntec-mark": {"file": "sakntec-mark", "height": 22},
+    "sakntec-lockup": {"file": "sakntec-lockup-en", "height": 26,
+                       "file_ar": "sakntec-lockup-ar", "height_ar": 30},
     "none": None,
 }
 
 # A Latin title whose Arabic name is known, used when no `title_ar` is set, so
-# a manager that sends only {"title": "Baytec"} still puts «بيتك» in an Arabic
-# viewer's tab. Deliberately not "Dartec": a home branded before the rename
-# keeps showing exactly what it showed.
-_KNOWN_ARABIC = {"baytec": "بيتك"}
+# a manager that sends only {"title": "Sakntec"} still puts «سكنتك» in an
+# Arabic viewer's tab. "Baytec" keeps its Arabic, so a home branded Baytec
+# shows exactly what it showed until branding is applied again. Deliberately
+# not "Dartec": a home branded before the first rename keeps its text too.
+_KNOWN_ARABIC = {"sakntec": "سكنتك", "baytec": "بيتك"}
 
 
 def arabic_title(config: dict[str, Any]) -> str:
@@ -464,7 +476,8 @@ async def branding_set(hass: HomeAssistant, cmd: dict[str, Any]) -> dict:
 
     Keys: `enabled`, `title`, `title_ar`, `logo`, `tab_suffix`. A key left
     out takes its default, as it always has. `title_ar` is the name Arabic
-    viewers see; left empty, "Baytec" gets «بيتك» and any other title is shown
+    viewers see; left empty, "Sakntec" gets «سكنتك», "Baytec" gets «بيتك», and any
+    other title is shown
     as it is. An unknown `logo` is refused with `code: "invalid_logo"` and the
     accepted `logos`, and nothing is changed: older agents refuse it too, with
     the sentence "logo must be 'mark', 'lockup' or 'none'" and no code.

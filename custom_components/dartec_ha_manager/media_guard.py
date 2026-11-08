@@ -1,6 +1,6 @@
 """No picture, snapshot, stream or video of a home ever leaves it.
 
-The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): Baytec monitors
+The owner's decision, 2026-10-18 (kaboomAE/dartec-ops#45): Sakntec monitors
 cameras for **health only** — online, recording, recorder disk space. It
 never sees what a camera sees. Recordings stay on the recorder in the house.
 

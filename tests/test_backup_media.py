@@ -1,7 +1,7 @@
-"""No media folder in anything Baytec makes or takes (owner, 2026-10-18).
+"""No media folder in anything Sakntec makes or takes (owner, 2026-10-18).
 
 Home Assistant's `media` folder is where a household's automations save
-camera snapshots and clips. A backup Baytec starts leaves it out and cannot be
+camera snapshots and clips. A backup Sakntec starts leaves it out and cannot be
 asked to include it, setting the automatic schedule takes it out of the
 automatic backups, and a backup that holds it is never copied offsite.
 """
@@ -82,7 +82,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
-class TestBaytecBackups:
+class TestSakntecBackups:
     def test_a_backup_leaves_media_out(self, home):
         h = home()
         assert run(backup_cmds.backup_create(None, {}))["ok"]

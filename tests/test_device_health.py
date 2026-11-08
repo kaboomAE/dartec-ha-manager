@@ -22,7 +22,8 @@ from device_health import (EXPECTED_OFFLINE_LABEL,  # noqa: E402
 
 # "Baytec expected offline", and the Dartec-era label homes already carry.
 BOTH_LABELS = pytest.mark.parametrize("label", [
-    pytest.param("baytec_expected_offline", id="baytec"),
+    pytest.param("sakntec_expected_offline", id="sakntec"),
+    pytest.param("baytec_expected_offline", id="baytec-still-works"),
     pytest.param("dartec_expected_offline", id="dartec-still-works")])
 
 
@@ -123,8 +124,8 @@ class TestCallingADeviceOffline:
 
 
 class TestTheExpectedOfflineLabel:
-    def test_the_label_to_create_is_the_baytec_one(self):
-        assert EXPECTED_OFFLINE_LABEL == "baytec_expected_offline"
+    def test_the_label_to_create_is_the_sakntec_one(self):
+        assert EXPECTED_OFFLINE_LABEL == "sakntec_expected_offline"
         assert LEGACY_EXPECTED_OFFLINE_LABEL == "dartec_expected_offline"
 
     @BOTH_LABELS

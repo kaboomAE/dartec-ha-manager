@@ -78,7 +78,7 @@ async def main(token: str, step: str) -> dict:
                     "logbook": [f"{row.get('name')}: {row.get('message')}" for row in logbook
                                 if any(brand in str(row.get("message") or "")
                                        or brand in str(row.get("name") or "")
-                                       for brand in ("Baytec", "Dartec"))]}
+                                       for brand in ("Sakntec", "Dartec"))]}
         finally:
             await ws.close()
 

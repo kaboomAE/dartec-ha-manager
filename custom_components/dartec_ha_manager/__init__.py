@@ -21,14 +21,15 @@ PLATFORMS = [Platform.SWITCH]
 
 
 # Homes paired before v0.6.1 were given the entry title "DarTec: <customer> /
-# <home>", and later ones "Dartec: <customer> / <home>". The brand is now
-# Baytec (the rename, 2026-10-08). The title is this integration's own label,
+# <home>", later ones "Dartec: <customer> / <home>", and from 2026-10-08
+# "Baytec: …". The brand is now Sakntec (owner, 2026-11-05: everything public
+# moves to Sakntec). The title is this integration's own label,
 # shown on the homeowner's Integrations page, so the agent corrects it itself
 # (dartec-ha-manager#25). Only the brand before the colon is changed: the
 # customer's and the home's names after it, and everything else in the entry,
 # stay as they are.
-_OLD_PREFIX = re.compile(r"^\s*(?:Dar[ -]?Tec|Dartec)(?=\s*:)")
-BRAND = "Baytec"
+_OLD_PREFIX = re.compile(r"^\s*(?:Dar[ -]?Tec|Dartec|Baytec)(?=\s*:)")
+BRAND = "Sakntec"
 
 
 def _correct_own_title(hass: HomeAssistant, entry: ConfigEntry) -> None:

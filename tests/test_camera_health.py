@@ -1,5 +1,5 @@
 """The cameras section: UniFi Protect's health entities, and every other
-camera's online state, onto Baytec's common shape.
+camera's online state, onto Sakntec's common shape.
 
 Unique ids and keys are Home Assistant's own (homeassistant/components/
 unifiprotect, 2026.10): `<mac>_<key>`. Nothing here is a picture: see
