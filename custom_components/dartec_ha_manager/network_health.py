@@ -35,9 +35,10 @@ are the closest thing, and they report UniFi's *average* latency to a
 monitor target, which may keep its last value while the line is down. So the
 internet state is read, in order of trust, from:
 
-1. any `binary_sensor` carrying the label `baytec_internet` (create a label
+1. any `binary_sensor` carrying the label `sakntec_internet` (create a label
    named "Sakntec internet" and put it on, say, a Ping (ICMP) sensor): `on` is
-   up. An installer's explicit choice, so it wins;
+   up. An installer's explicit choice, so it wins. `baytec_internet`, its name
+   before the rename to Sakntec, still works;
 2. the agent's own check (internet_watch.py), on every home, whatever its
    equipment: up, down, or `blocked` when the probes fail while Sakntec is
    reachable;
@@ -72,7 +73,8 @@ except ImportError:  # imported on its own, as the tests do
 _LOGGER = logging.getLogger(__name__)
 
 NETWORK_VERSION = 1
-INTERNET_LABEL = "baytec_internet"
+INTERNET_LABEL = "sakntec_internet"
+INTERNET_LABELS = (INTERNET_LABEL, "baytec_internet")
 MAX_DEVICES = 100
 MAX_WLANS = 16
 DOWN_STATES = frozenset({"unavailable", "unknown"})
@@ -365,7 +367,7 @@ def collect(hass) -> dict:
         from . import ha_facts, internet_watch
 
         entities = ha_facts.entity_facts(hass, ADAPTERS)
-        labelled = ha_facts.labelled_facts(hass, (INTERNET_LABEL,))
+        labelled = ha_facts.labelled_facts(hass, INTERNET_LABELS)
         devices = ha_facts.device_facts(hass, (f["device_id"] for f in entities))
         unadapted = ha_facts.devices_from(hass, "ubiquiti", ADAPTERS)
         section = summarize(entities, devices, labelled, internet_watch.current(hass),

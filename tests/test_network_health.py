@@ -191,7 +191,7 @@ class TestInternet:
         entities, devices = home()
         entities += [self.wan("google", "wan", "12")]
         check = fact("binary_sensor.ping_1_1_1_1", "binary_sensor", "ping-1", None, "off",
-                     platform="ping", labels=["baytec_internet"],
+                     platform="ping", labels=["sakntec_internet"],
                      last_changed="2026-10-18T09:00:00+00:00")
         internet = n.summarize(entities, devices, [check])["internet"]
         assert internet == {"state": "down", "source": "label",
@@ -204,6 +204,11 @@ class TestInternet:
                      platform="ping", labels=["baytec_internet"])
         section = n.summarize([], {}, [check])
         assert section["internet"]["state"] == "up" and section["devices"] == []
+
+
+def test_the_label_to_create_is_sakntec_and_the_baytec_one_still_counts():
+    assert n.INTERNET_LABEL == "sakntec_internet"
+    assert set(n.INTERNET_LABELS) == {"sakntec_internet", "baytec_internet"}
 
 
 class TestARealHome:
